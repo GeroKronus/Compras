@@ -1,8 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from app.config import settings
 from app.middleware.tenant_middleware import TenantMiddleware
 from app.api.routes import auth, tenants, categorias, produtos, fornecedores, cotacoes, pedidos, emails, ia_usage, dashboard, auditoria, usuarios
+import os
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -80,3 +83,24 @@ def shutdown_event():
     except:
         pass
     print("[SHUTDOWN] Sistema encerrado!")
+
+
+# Servir frontend estático (em produção)
+STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+
+if os.path.exists(STATIC_DIR):
+    # Servir arquivos estáticos (JS, CSS, imagens)
+    app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
+
+    # Catch-all para SPA - qualquer rota não-API retorna index.html
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # Se for rota de API, deixa passar (já foi tratada pelos routers)
+        if full_path.startswith("api/") or full_path in ["docs", "redoc", "openapi.json", "health"]:
+            return {"detail": "Not Found"}
+
+        # Retorna o index.html para o React Router tratar
+        index_path = os.path.join(STATIC_DIR, "index.html")
+        if os.path.exists(index_path):
+            return FileResponse(index_path)
+        return {"detail": "Frontend not found"}
