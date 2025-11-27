@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.config import settings
 from app.middleware.tenant_middleware import TenantMiddleware
-from app.api.routes import auth, tenants, categorias, produtos, fornecedores, cotacoes, pedidos, emails, ia_usage, dashboard, auditoria, usuarios
+from app.api.routes import auth, tenants, categorias, produtos, fornecedores, cotacoes, pedidos, emails, ia_usage, dashboard, auditoria, usuarios, setup
 import os
 
 app = FastAPI(
@@ -83,6 +83,7 @@ app.include_router(ia_usage.router, prefix=f"{settings.API_V1_STR}/ia", tags=["i
 app.include_router(dashboard.router, prefix=f"{settings.API_V1_STR}/dashboard", tags=["dashboard"])
 app.include_router(auditoria.router, prefix=f"{settings.API_V1_STR}/auditoria", tags=["auditoria"])
 app.include_router(usuarios.router, prefix=f"{settings.API_V1_STR}/usuarios", tags=["usuarios"])
+app.include_router(setup.router, prefix=f"{settings.API_V1_STR}/setup", tags=["setup"])
 
 
 # Evento de startup (jobs agendados)
