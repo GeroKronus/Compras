@@ -26,9 +26,8 @@ app.add_middleware(
 # Middleware de Tenant (será aplicado após autenticação)
 app.add_middleware(TenantMiddleware)
 
-# Verificar se frontend estático existe
+# Diretório do frontend estático
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
-HAS_FRONTEND = os.path.exists(STATIC_DIR) and os.path.exists(os.path.join(STATIC_DIR, "index.html"))
 
 # Rota de health check
 @app.get("/health")
@@ -36,11 +35,26 @@ def health_check():
     """Health check para monitoramento"""
     return {"status": "healthy"}
 
+# Debug: verificar caminho do frontend
+@app.get("/debug/static")
+def debug_static():
+    """Debug: verificar se frontend existe"""
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    return {
+        "static_dir": STATIC_DIR,
+        "index_path": index_path,
+        "static_exists": os.path.exists(STATIC_DIR),
+        "index_exists": os.path.exists(index_path),
+        "cwd": os.getcwd(),
+        "files_in_static": os.listdir(STATIC_DIR) if os.path.exists(STATIC_DIR) else []
+    }
+
 # Rota raiz - serve frontend se existir, senão retorna info da API
 @app.get("/")
 def root():
-    if HAS_FRONTEND:
-        return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
     return {
         "message": "Sistema de Compras Multi-Tenant API",
         "version": "1.0.0",
@@ -92,16 +106,20 @@ def shutdown_event():
 
 
 # Servir frontend estático (em produção)
-if HAS_FRONTEND:
-    # Servir arquivos estáticos (JS, CSS, imagens)
-    app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
+# Monta assets se existir
+assets_dir = os.path.join(STATIC_DIR, "assets")
+if os.path.exists(assets_dir):
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
-    # Catch-all para SPA - qualquer rota não-API retorna index.html
-    @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
-        # Se for rota de API, deixa passar (já foi tratada pelos routers)
-        if full_path.startswith("api/") or full_path in ["docs", "redoc", "openapi.json", "health"]:
-            return {"detail": "Not Found"}
+# Catch-all para SPA - qualquer rota não-API retorna index.html
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    # Se for rota de API, deixa passar (já foi tratada pelos routers)
+    if full_path.startswith("api/") or full_path in ["docs", "redoc", "openapi.json", "health"]:
+        return {"detail": "Not Found"}
 
-        # Retorna o index.html para o React Router tratar
-        return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+    # Retorna o index.html para o React Router tratar
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"detail": "Not Found"}
