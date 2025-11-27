@@ -22,6 +22,7 @@ export interface Tenant {
   ativo: boolean;
   plano: 'trial' | 'basic' | 'pro' | 'enterprise';
   ia_habilitada: boolean;
+  ia_auto_aprovacao?: boolean;
   email_contato: string;
   telefone?: string;
 }

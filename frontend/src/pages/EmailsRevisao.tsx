@@ -111,7 +111,7 @@ export default function EmailsRevisao() {
   const [ignorar, setIgnorar] = useState(false);
 
   // Queries
-  const { data: emailsData, isLoading, refetch } = useQuery({
+  const { data: emailsData, isLoading } = useQuery({
     queryKey: ['emails-processados', statusFilter, page],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -536,7 +536,7 @@ export default function EmailsRevisao() {
         onSubmit={handleClassificar}
         submitLabel={ignorar ? 'Ignorar Email' : 'Classificar'}
         submitLoading={classificarMutation.isPending}
-        submitColor={ignorar ? 'gray' : 'blue'}
+        submitColor={ignorar ? 'primary' : 'blue'}
         size="lg"
       >
         {classificarModal.data && (

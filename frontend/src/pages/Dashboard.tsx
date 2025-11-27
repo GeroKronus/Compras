@@ -13,7 +13,6 @@ import {
   CpuChipIcon,
   BellAlertIcon,
   ArrowRightIcon,
-  ClockIcon,
   XMarkIcon,
   SparklesIcon,
   TrophyIcon,

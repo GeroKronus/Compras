@@ -171,9 +171,10 @@ export default function MapaComparativo() {
     if (!fornecedor) return '';
 
     const isMelhorPreco = melhorProposta?.id === fornecedorId;
-    const economia = melhorProposta && fornecedor.id !== melhorProposta.id
+    const _economia = melhorProposta && fornecedor.id !== melhorProposta.id
       ? fornecedor.valor_total - melhorProposta.valor_total
       : 0;
+    void _economia; // Variável reservada para uso futuro
 
     let justificativa = '';
 
