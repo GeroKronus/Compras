@@ -26,20 +26,26 @@ app.add_middleware(
 # Middleware de Tenant (será aplicado após autenticação)
 app.add_middleware(TenantMiddleware)
 
+# Verificar se frontend estático existe
+STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+HAS_FRONTEND = os.path.exists(STATIC_DIR) and os.path.exists(os.path.join(STATIC_DIR, "index.html"))
+
 # Rota de health check
+@app.get("/health")
+def health_check():
+    """Health check para monitoramento"""
+    return {"status": "healthy"}
+
+# Rota raiz - serve frontend se existir, senão retorna info da API
 @app.get("/")
 def root():
+    if HAS_FRONTEND:
+        return FileResponse(os.path.join(STATIC_DIR, "index.html"))
     return {
         "message": "Sistema de Compras Multi-Tenant API",
         "version": "1.0.0",
         "environment": settings.ENVIRONMENT
     }
-
-
-@app.get("/health")
-def health_check():
-    """Health check para monitoramento"""
-    return {"status": "healthy"}
 
 
 # Incluir routers
@@ -86,9 +92,7 @@ def shutdown_event():
 
 
 # Servir frontend estático (em produção)
-STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
-
-if os.path.exists(STATIC_DIR):
+if HAS_FRONTEND:
     # Servir arquivos estáticos (JS, CSS, imagens)
     app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
 
@@ -100,7 +104,4 @@ if os.path.exists(STATIC_DIR):
             return {"detail": "Not Found"}
 
         # Retorna o index.html para o React Router tratar
-        index_path = os.path.join(STATIC_DIR, "index.html")
-        if os.path.exists(index_path):
-            return FileResponse(index_path)
-        return {"detail": "Frontend not found"}
+        return FileResponse(os.path.join(STATIC_DIR, "index.html"))
