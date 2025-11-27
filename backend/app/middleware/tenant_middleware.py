@@ -46,7 +46,18 @@ class TenantMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Rotas públicas passam direto
-        if path in self.PUBLIC_PATHS or path.startswith("/static"):
+        # Inclui arquivos estáticos (assets, imagens, etc)
+        if (path in self.PUBLIC_PATHS or
+            path.startswith("/static") or
+            path.startswith("/assets") or
+            path.endswith(".css") or
+            path.endswith(".js") or
+            path.endswith(".svg") or
+            path.endswith(".ico") or
+            path.endswith(".png") or
+            path.endswith(".jpg") or
+            path.endswith(".woff") or
+            path.endswith(".woff2")):
             clear_current_tenant_id()
             return await call_next(request)
 
