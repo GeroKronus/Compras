@@ -93,6 +93,21 @@ def startup_event():
     print(f"[STARTUP] Documentacao: http://localhost:8000/docs")
     print(f"[STARTUP] Ambiente: {settings.ENVIRONMENT}")
 
+    # Criar tabelas do banco de dados automaticamente
+    try:
+        from app.database import engine
+        from app.models.base import Base
+        # Importar todos os models para registrar no metadata
+        from app.models import (
+            tenant, usuario, categoria, produto, fornecedor,
+            cotacao, pedido, auditoria_escolha, uso_ia,
+            email_processado, produto_fornecedor
+        )
+        Base.metadata.create_all(bind=engine)
+        print("[STARTUP] Tabelas do banco de dados criadas/verificadas!")
+    except Exception as e:
+        print(f"[STARTUP] Erro ao criar tabelas: {e}")
+
     # Iniciar job de verificacao de emails se habilitado
     if getattr(settings, 'ENABLE_SCHEDULED_JOBS', False):
         try:

@@ -4,20 +4,11 @@ Permite criar o primeiro usuário MASTER quando o banco está vazio.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 from pydantic import BaseModel, EmailStr
-from app.database import get_db, engine
-from app.models.base import Base
+from app.database import get_db
 from app.models.tenant import Tenant
 from app.models.usuario import Usuario, TipoUsuario
-# Importar todos os models para que o Base.metadata conheça todas as tabelas
-from app.models import categoria, produto, fornecedor, cotacao, pedido, auditoria
 import bcrypt
-
-
-def create_tables():
-    """Criar todas as tabelas no banco de dados"""
-    Base.metadata.create_all(bind=engine)
 
 router = APIRouter()
 
@@ -44,39 +35,20 @@ def get_setup_status(db: Session = Depends(get_db)):
     Retorna se já existe um usuário MASTER.
     """
     try:
-        # Tenta verificar se a tabela existe
         master_exists = db.query(Usuario).filter(
             Usuario.tipo == TipoUsuario.MASTER
         ).first() is not None
 
         return {
             "initialized": master_exists,
-            "tables_created": True,
-            "message": "Sistema já inicializado" if master_exists else "Sistema aguardando inicialização"
+            "message": "Sistema já inicializado" if master_exists else "Sistema aguardando inicialização - use POST /api/v1/setup/init"
         }
-    except Exception:
-        # Tabelas não existem ainda
+    except Exception as e:
         return {
             "initialized": False,
-            "tables_created": False,
-            "message": "Tabelas não criadas. Use POST /api/v1/setup/init para inicializar."
+            "error": str(e),
+            "message": "Erro ao verificar status. As tabelas podem ainda estar sendo criadas."
         }
-
-
-@router.post("/create-tables")
-def create_database_tables():
-    """
-    Cria todas as tabelas no banco de dados.
-    Seguro para executar múltiplas vezes (não recria tabelas existentes).
-    """
-    try:
-        create_tables()
-        return {"success": True, "message": "Tabelas criadas com sucesso!"}
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro ao criar tabelas: {str(e)}"
-        )
 
 
 @router.post("/init", response_model=SetupResponse)
@@ -90,9 +62,9 @@ def initialize_system(
     IMPORTANTE: Este endpoint só funciona se NÃO existir nenhum usuário MASTER.
     Após a primeira execução, ele retornará erro.
 
-    Este endpoint automaticamente cria as tabelas se não existirem.
+    As tabelas são criadas automaticamente no startup da aplicação.
     """
-    # Validar senha primeiro (antes de criar tabelas)
+    # Validar senha primeiro
     if len(request.senha) < 8:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -100,9 +72,6 @@ def initialize_system(
         )
 
     try:
-        # Criar tabelas se não existirem
-        create_tables()
-
         # Verificar se já existe um usuário MASTER
         master_exists = db.query(Usuario).filter(
             Usuario.tipo == TipoUsuario.MASTER
@@ -113,6 +82,7 @@ def initialize_system(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Sistema já foi inicializado. Não é possível criar outro usuário MASTER por este endpoint."
             )
+
         # Criar ou recuperar tenant MASTER
         tenant = db.query(Tenant).filter(Tenant.slug == "master").first()
 
@@ -159,6 +129,8 @@ def initialize_system(
             email=request.email
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(
