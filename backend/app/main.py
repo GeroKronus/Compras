@@ -27,7 +27,9 @@ app.add_middleware(
 app.add_middleware(TenantMiddleware)
 
 # Diretório do frontend estático
-STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+# Em produção (Docker): /app/static
+# Em desenvolvimento: backend/static (não existe)
+STATIC_DIR = "/app/static" if os.path.exists("/app/static") else os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 
 # Rota de health check
 @app.get("/health")
