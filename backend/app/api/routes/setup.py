@@ -111,7 +111,8 @@ def initialize_system(
                 max_usuarios=999,
                 max_produtos=99999,
                 max_fornecedores=99999,
-                ia_habilitada=True
+                ia_habilitada=True,
+                email_contato=request.email  # Usar email do admin como contato
             )
             db.add(tenant)
             db.flush()
