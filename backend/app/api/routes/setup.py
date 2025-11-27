@@ -5,10 +5,21 @@ Permite criar o primeiro usuário MASTER quando o banco está vazio.
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
-from app.database import get_db
+from app.database import get_db, engine, Base
 from app.models.tenant import Tenant
 from app.models.usuario import Usuario, TipoUsuario
+# Importar todos os models para registrar no metadata
+from app.models import (
+    tenant, usuario, categoria, produto, fornecedor,
+    cotacao, pedido, auditoria_escolha, uso_ia,
+    email_processado, produto_fornecedor
+)
 import bcrypt
+
+
+def create_all_tables():
+    """Criar todas as tabelas no banco de dados"""
+    Base.metadata.create_all(bind=engine)
 
 router = APIRouter()
 
@@ -72,6 +83,9 @@ def initialize_system(
         )
 
     try:
+        # Criar tabelas primeiro (se não existirem)
+        create_all_tables()
+
         # Verificar se já existe um usuário MASTER
         master_exists = db.query(Usuario).filter(
             Usuario.tipo == TipoUsuario.MASTER
