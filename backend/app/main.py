@@ -39,15 +39,21 @@ def health_check():
 @app.get("/debug/static")
 def debug_static():
     """Debug: verificar se frontend existe"""
-    index_path = os.path.join(STATIC_DIR, "index.html")
-    return {
-        "static_dir": STATIC_DIR,
-        "index_path": index_path,
-        "static_exists": os.path.exists(STATIC_DIR),
-        "index_exists": os.path.exists(index_path),
-        "cwd": os.getcwd(),
-        "files_in_static": os.listdir(STATIC_DIR) if os.path.exists(STATIC_DIR) else []
-    }
+    try:
+        index_path = os.path.join(STATIC_DIR, "index.html")
+        files = []
+        if os.path.exists(STATIC_DIR):
+            files = os.listdir(STATIC_DIR)
+        return {
+            "static_dir": STATIC_DIR,
+            "index_path": index_path,
+            "static_exists": os.path.exists(STATIC_DIR),
+            "index_exists": os.path.exists(index_path),
+            "cwd": os.getcwd(),
+            "files_in_static": files
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 # Rota raiz - serve frontend se existir, senão retorna info da API
 @app.get("/")
@@ -114,8 +120,8 @@ if os.path.exists(assets_dir):
 # Catch-all para SPA - qualquer rota não-API retorna index.html
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
-    # Se for rota de API, deixa passar (já foi tratada pelos routers)
-    if full_path.startswith("api/") or full_path in ["docs", "redoc", "openapi.json", "health"]:
+    # Se for rota de API ou interna, deixa passar
+    if full_path.startswith("api/") or full_path.startswith("debug/") or full_path in ["docs", "redoc", "openapi.json", "health"]:
         return {"detail": "Not Found"}
 
     # Retorna o index.html para o React Router tratar
