@@ -31,6 +31,8 @@ class TenantMiddleware(BaseHTTPMiddleware):
         "/api/v1/auth/login",
         "/api/v1/auth/register",
         "/api/v1/tenants/register",  # Registro de novos tenants
+        "/api/v1/setup/status",  # Verificar status do setup
+        "/api/v1/setup/init",  # Inicializar sistema
     ]
 
     async def dispatch(self, request: Request, call_next):
