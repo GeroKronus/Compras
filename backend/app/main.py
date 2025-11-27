@@ -129,18 +129,17 @@ def shutdown_event():
     print("[SHUTDOWN] Sistema encerrado!")
 
 
-# Servir frontend estático (em produção)
-# Monta assets se existir
-assets_dir = os.path.join(STATIC_DIR, "assets")
-if os.path.exists(assets_dir):
-    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
-
-# Catch-all para SPA - qualquer rota não-API retorna index.html
+# Catch-all para SPA - qualquer rota não-API retorna index.html ou arquivos estáticos
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
     # Se for rota de API ou interna, deixa passar
     if full_path.startswith("api/") or full_path.startswith("debug/") or full_path in ["docs", "redoc", "openapi.json", "health"]:
         return {"detail": "Not Found"}
+
+    # Tentar servir arquivo estático (assets, vite.svg, etc)
+    static_file = os.path.join(STATIC_DIR, full_path)
+    if os.path.isfile(static_file):
+        return FileResponse(static_file)
 
     # Retorna o index.html para o React Router tratar
     index_path = os.path.join(STATIC_DIR, "index.html")
