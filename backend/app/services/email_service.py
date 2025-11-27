@@ -1,0 +1,761 @@
+"""
+Serviço de Email para Sistema de Compras
+Envio via SMTP e Leitura via IMAP
+Baseado no sistema PicStone WEB (Zoho Mail)
+"""
+import smtplib
+import imaplib
+import email
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.header import decode_header
+from typing import Optional, List
+from datetime import datetime, timedelta
+import re
+from app.config import settings
+
+
+class EmailService:
+    """Serviço para envio e leitura de emails"""
+
+    def __init__(self):
+        self.smtp_host = getattr(settings, 'SMTP_HOST', 'smtppro.zoho.com')
+        self.smtp_port = getattr(settings, 'SMTP_PORT', 465)
+        self.smtp_user = getattr(settings, 'SMTP_USER', '')
+        self.smtp_password = getattr(settings, 'SMTP_PASSWORD', '')
+        self.email_from = getattr(settings, 'EMAIL_FROM', self.smtp_user)
+
+        # IMAP para leitura
+        self.imap_host = getattr(settings, 'IMAP_HOST', 'imappro.zoho.com')
+        self.imap_port = getattr(settings, 'IMAP_PORT', 993)
+
+    @property
+    def is_configured(self) -> bool:
+        """Verifica se o serviço de email está configurado"""
+        return bool(self.smtp_user and self.smtp_password)
+
+    def enviar_email(
+        self,
+        destinatario: str,
+        assunto: str,
+        corpo_html: str,
+        corpo_texto: Optional[str] = None
+    ) -> bool:
+        """
+        Envia email via SMTP
+
+        Args:
+            destinatario: Email do destinatário
+            assunto: Assunto do email
+            corpo_html: Corpo do email em HTML
+            corpo_texto: Corpo em texto puro (opcional)
+
+        Returns:
+            True se enviado com sucesso
+        """
+        if not self.is_configured:
+            print("[EMAIL] Serviço não configurado. Pulando envio.")
+            return False
+
+        try:
+            # Criar mensagem
+            msg = MIMEMultipart('alternative')
+            msg['From'] = self.email_from
+            msg['To'] = destinatario
+            msg['Subject'] = assunto
+
+            # Adicionar corpo texto e HTML
+            if corpo_texto:
+                msg.attach(MIMEText(corpo_texto, 'plain', 'utf-8'))
+            msg.attach(MIMEText(corpo_html, 'html', 'utf-8'))
+
+            # Conectar e enviar
+            if self.smtp_port == 465:
+                # SSL
+                server = smtplib.SMTP_SSL(self.smtp_host, self.smtp_port)
+            else:
+                # TLS
+                server = smtplib.SMTP(self.smtp_host, self.smtp_port)
+                server.starttls()
+
+            server.login(self.smtp_user, self.smtp_password)
+            server.sendmail(self.email_from, destinatario, msg.as_string())
+            server.quit()
+
+            print(f"[EMAIL] Enviado com sucesso para: {destinatario}")
+            return True
+
+        except Exception as e:
+            print(f"[EMAIL] ERRO ao enviar para {destinatario}: {e}")
+            return False
+
+    def enviar_solicitacao_cotacao(
+        self,
+        fornecedor_email: str,
+        fornecedor_nome: str,
+        produto_nome: str,
+        quantidade: int,
+        unidade: str,
+        observacoes: Optional[str] = None,
+        solicitacao_id: int = 0,
+        prazo_resposta_dias: int = 3
+    ) -> bool:
+        """
+        Envia email de solicitação de cotação para fornecedor
+
+        Args:
+            fornecedor_email: Email do fornecedor
+            fornecedor_nome: Nome do fornecedor
+            produto_nome: Nome do produto
+            quantidade: Quantidade desejada
+            unidade: Unidade de medida
+            observacoes: Observações adicionais
+            solicitacao_id: ID da solicitação (para rastreamento)
+            prazo_resposta_dias: Prazo para resposta
+
+        Returns:
+            True se enviado com sucesso
+        """
+        prazo = (datetime.now() + timedelta(days=prazo_resposta_dias)).strftime('%d/%m/%Y')
+
+        assunto = f"[COTAÇÃO #{solicitacao_id}] Solicitação de Preço - {produto_nome}"
+
+        obs_html = f"<p><strong>Observações:</strong> {observacoes}</p>" if observacoes else ""
+
+        corpo_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+        .container {{ max-width: 700px; margin: 0 auto; padding: 20px; }}
+        .header {{ background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
+        .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
+        .produto-box {{ background: white; border: 2px solid #3b82f6; padding: 20px; border-radius: 8px; margin: 20px 0; }}
+        .footer {{ text-align: center; margin-top: 20px; color: #666; font-size: 12px; }}
+        .importante {{ background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; background: white; }}
+        th {{ background: #4caf50; color: white; padding: 10px; text-align: left; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 style="margin: 0;">Solicitação de Cotação</h1>
+            <p style="margin: 10px 0 0 0;">Referência: #{solicitacao_id}</p>
+        </div>
+        <div class="content">
+            <p>Prezado(a) <strong>{fornecedor_nome}</strong>,</p>
+
+            <p>Gostaríamos de solicitar cotação para o seguinte item:</p>
+
+            <div class="produto-box">
+                <h3 style="margin-top: 0; color: #3b82f6;">{produto_nome}</h3>
+                <p><strong>Quantidade:</strong> {quantidade} {unidade}</p>
+                {obs_html}
+            </div>
+
+            <div style="background: #e8f5e9; border: 2px solid #4caf50; border-radius: 8px; padding: 20px; margin: 25px 0;">
+                <h3 style="color: #2e7d32; margin-top: 0;">📝 PREENCHA SUA PROPOSTA ABAIXO</h3>
+                <p style="color: #555; margin-bottom: 15px;">Ao responder, preencha os campos em amarelo com seus valores:</p>
+
+                <table style="width: 100%; border-collapse: collapse; background: white;">
+                    <thead>
+                        <tr style="background: #4caf50; color: white;">
+                            <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Produto</th>
+                            <th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 60px;">Qtd</th>
+                            <th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 100px;">Preco Unit.</th>
+                            <th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 100px;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="padding: 10px; border: 1px solid #ddd;">{produto_nome}</td>
+                            <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{quantidade}</td>
+                            <td style="padding: 10px; border: 1px solid #ddd; text-align: center; background: #fffef0;">R$ _______</td>
+                            <td style="padding: 10px; border: 1px solid #ddd; text-align: center; background: #fffef0;">R$ _______</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div style="margin-top: 15px; padding: 15px; background: #fffef0; border-radius: 5px;">
+                    <p style="margin: 5px 0;"><strong>Prazo de Entrega:</strong> _______ dias</p>
+                    <p style="margin: 5px 0;"><strong>Condicoes de Pagamento:</strong> _______________________</p>
+                    <p style="margin: 5px 0;"><strong>Frete:</strong> ( ) Incluso ( ) Por conta do comprador - Valor: R$ _______</p>
+                    <p style="margin: 5px 0;"><strong>Validade da Proposta:</strong> _______ dias</p>
+                    <p style="margin: 5px 0;"><strong>Observacoes:</strong> _______________________</p>
+                </div>
+            </div>
+
+            <div class="importante">
+                <strong>⚠️ IMPORTANTE:</strong>
+                <ul style="margin: 10px 0 0 0;">
+                    <li>Preencha a tabela acima ao responder este email</li>
+                    <li>Voce tambem pode anexar um PDF ou responder em formato livre</li>
+                    <li>Prazo para resposta: <strong>{prazo}</strong></li>
+                    <li>Mantenha o assunto do email para rastreamento</li>
+                </ul>
+            </div>
+
+            <p>Aguardamos seu retorno.</p>
+
+            <p>Atenciosamente,<br>
+            <strong>Departamento de Compras</strong></p>
+        </div>
+        <div class="footer">
+            <p>Este é um email automático do Sistema de Gestão de Compras</p>
+            <p>Referência: COTACAO-{solicitacao_id}</p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+        corpo_texto = f"""
+Prezado(a) {fornecedor_nome},
+
+Gostaríamos de solicitar cotação para o seguinte item:
+
+PRODUTO: {produto_nome}
+QUANTIDADE: {quantidade} {unidade}
+{f'OBSERVAÇÕES: {observacoes}' if observacoes else ''}
+
+============================================
+   PREENCHA SUA PROPOSTA ABAIXO
+============================================
+
+{produto_nome} | Qtd: {quantidade} | Preco Unit: R$ _____ | Total: R$ _____
+
+Prazo de Entrega: _______ dias
+Condicoes de Pagamento: _______________________
+Frete: ( ) Incluso ( ) Por conta do comprador - Valor: R$ _______
+Validade da Proposta: _______ dias
+Observacoes: _______________________
+
+============================================
+
+IMPORTANTE:
+- Preencha os campos acima ao responder este email
+- Voce tambem pode anexar um PDF ou responder em formato livre
+- Prazo para resposta: {prazo}
+- Mantenha o assunto do email para rastreamento
+
+Atenciosamente,
+Departamento de Compras
+
+Referência: COTACAO-{solicitacao_id}
+"""
+
+        return self.enviar_email(
+            destinatario=fornecedor_email,
+            assunto=assunto,
+            corpo_html=corpo_html,
+            corpo_texto=corpo_texto
+        )
+
+    def enviar_solicitacao_cotacao_multiplos_itens(
+        self,
+        fornecedor_email: str,
+        fornecedor_nome: str,
+        solicitacao_numero: str,
+        solicitacao_titulo: str,
+        itens: List[dict],
+        observacoes: Optional[str] = None,
+        solicitacao_id: int = 0,
+        data_limite: Optional[str] = None,
+        prazo_resposta_dias: int = 5
+    ) -> bool:
+        """
+        Envia email de solicitação de cotação com múltiplos itens para fornecedor
+
+        Args:
+            fornecedor_email: Email do fornecedor
+            fornecedor_nome: Nome do fornecedor
+            solicitacao_numero: Número da solicitação (ex: SOL-2024-0001)
+            solicitacao_titulo: Título da solicitação
+            itens: Lista de itens com produto_nome, quantidade, unidade_medida, especificacoes
+            observacoes: Observações adicionais
+            solicitacao_id: ID da solicitação (para rastreamento)
+            data_limite: Data limite para resposta
+            prazo_resposta_dias: Prazo para resposta em dias (usado se data_limite não informada)
+
+        Returns:
+            True se enviado com sucesso
+        """
+        if data_limite:
+            prazo = data_limite
+        else:
+            prazo = (datetime.now() + timedelta(days=prazo_resposta_dias)).strftime('%d/%m/%Y')
+
+        assunto = f"[COTAÇÃO {solicitacao_numero}] {solicitacao_titulo}"
+
+        # Criar HTML dos itens (tabela de visualização)
+        itens_html = ""
+        # Criar HTML da tabela de preenchimento (para o fornecedor preencher)
+        itens_preenchimento_html = ""
+        itens_texto = ""
+        itens_preenchimento_texto = ""
+
+        for i, item in enumerate(itens, 1):
+            especificacoes_html = f"<br><small style='color: #666;'>Obs: {item.get('especificacoes', '')}</small>" if item.get('especificacoes') else ""
+            itens_html += f"""
+            <tr>
+                <td style="padding: 12px; border-bottom: 1px solid #eee;">{i}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #eee;"><strong>{item.get('produto_nome', 'N/A')}</strong>{especificacoes_html}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center;">{item.get('quantidade', 0)}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center;">{item.get('unidade_medida', 'UN')}</td>
+            </tr>
+            """
+            # Tabela de preenchimento - o fornecedor preenche os campos ___
+            itens_preenchimento_html += f"""
+            <tr>
+                <td style="padding: 10px; border: 1px solid #ddd;">{item.get('produto_nome', 'N/A')}</td>
+                <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{item.get('quantidade', 0)}</td>
+                <td style="padding: 10px; border: 1px solid #ddd; text-align: center; background: #fffef0;">R$ _______</td>
+                <td style="padding: 10px; border: 1px solid #ddd; text-align: center; background: #fffef0;">R$ _______</td>
+            </tr>
+            """
+            especificacoes_texto = f" ({item.get('especificacoes', '')})" if item.get('especificacoes') else ""
+            itens_texto += f"  {i}. {item.get('produto_nome', 'N/A')} - {item.get('quantidade', 0)} {item.get('unidade_medida', 'UN')}{especificacoes_texto}\n"
+            itens_preenchimento_texto += f"  {item.get('produto_nome', 'N/A')} | Qtd: {item.get('quantidade', 0)} | Preco Unit: R$ _____ | Total: R$ _____\n"
+
+        obs_html = f"<p><strong>Observações:</strong> {observacoes}</p>" if observacoes else ""
+
+        corpo_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+        .container {{ max-width: 700px; margin: 0 auto; padding: 20px; }}
+        .header {{ background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
+        .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
+        .footer {{ text-align: center; margin-top: 20px; color: #666; font-size: 12px; }}
+        .importante {{ background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; background: white; }}
+        th {{ background: #3b82f6; color: white; padding: 12px; text-align: left; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 style="margin: 0;">Solicitação de Cotação</h1>
+            <p style="margin: 10px 0 0 0;">{solicitacao_numero}</p>
+        </div>
+        <div class="content">
+            <p>Prezado(a) <strong>{fornecedor_nome}</strong>,</p>
+
+            <p>Gostaríamos de solicitar cotação para os seguintes itens:</p>
+
+            <h3 style="color: #3b82f6; margin-top: 25px;">{solicitacao_titulo}</h3>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 50px;">#</th>
+                        <th>Produto</th>
+                        <th style="width: 80px; text-align: center;">Qtd</th>
+                        <th style="width: 80px; text-align: center;">Unid</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {itens_html}
+                </tbody>
+            </table>
+
+            {obs_html}
+
+            <div style="background: #e8f5e9; border: 2px solid #4caf50; border-radius: 8px; padding: 20px; margin: 25px 0;">
+                <h3 style="color: #2e7d32; margin-top: 0;">📝 PREENCHA SUA PROPOSTA ABAIXO</h3>
+                <p style="color: #555; margin-bottom: 15px;">Ao responder, preencha os campos em amarelo com seus valores:</p>
+
+                <table style="width: 100%; border-collapse: collapse; background: white;">
+                    <thead>
+                        <tr style="background: #4caf50; color: white;">
+                            <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Produto</th>
+                            <th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 60px;">Qtd</th>
+                            <th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 100px;">Preco Unit.</th>
+                            <th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 100px;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {itens_preenchimento_html}
+                    </tbody>
+                </table>
+
+                <div style="margin-top: 15px; padding: 15px; background: #fffef0; border-radius: 5px;">
+                    <p style="margin: 5px 0;"><strong>Prazo de Entrega:</strong> _______ dias</p>
+                    <p style="margin: 5px 0;"><strong>Condicoes de Pagamento:</strong> _______________________</p>
+                    <p style="margin: 5px 0;"><strong>Frete:</strong> ( ) Incluso ( ) Por conta do comprador - Valor: R$ _______</p>
+                    <p style="margin: 5px 0;"><strong>Validade da Proposta:</strong> _______ dias</p>
+                    <p style="margin: 5px 0;"><strong>Observacoes:</strong> _______________________</p>
+                </div>
+            </div>
+
+            <div class="importante">
+                <strong>⚠️ IMPORTANTE:</strong>
+                <ul style="margin: 10px 0 0 0;">
+                    <li>Preencha a tabela acima ao responder este email</li>
+                    <li>Voce tambem pode anexar um PDF ou responder em formato livre</li>
+                    <li>Prazo para resposta: <strong>{prazo}</strong></li>
+                    <li>Mantenha o assunto do email para rastreamento</li>
+                </ul>
+            </div>
+
+            <p>Aguardamos seu retorno.</p>
+
+            <p>Atenciosamente,<br>
+            <strong>Departamento de Compras</strong></p>
+        </div>
+        <div class="footer">
+            <p>Este é um email automático do Sistema de Gestão de Compras</p>
+            <p>Referência: {solicitacao_numero} | ID: {solicitacao_id}</p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+        corpo_texto = f"""
+Prezado(a) {fornecedor_nome},
+
+Gostaríamos de solicitar cotação para os seguintes itens:
+
+{solicitacao_titulo}
+-------------------------------------------
+{itens_texto}
+{f'OBSERVAÇÕES: {observacoes}' if observacoes else ''}
+
+============================================
+   PREENCHA SUA PROPOSTA ABAIXO
+============================================
+
+{itens_preenchimento_texto}
+Prazo de Entrega: _______ dias
+Condicoes de Pagamento: _______________________
+Frete: ( ) Incluso ( ) Por conta do comprador - Valor: R$ _______
+Validade da Proposta: _______ dias
+Observacoes: _______________________
+
+============================================
+
+IMPORTANTE:
+- Preencha os campos acima ao responder este email
+- Voce tambem pode anexar um PDF ou responder em formato livre
+- Prazo para resposta: {prazo}
+- Mantenha o assunto do email para rastreamento
+
+Atenciosamente,
+Departamento de Compras
+
+Referência: {solicitacao_numero} | ID: {solicitacao_id}
+"""
+
+        return self.enviar_email(
+            destinatario=fornecedor_email,
+            assunto=assunto,
+            corpo_html=corpo_html,
+            corpo_texto=corpo_texto
+        )
+
+    def ler_emails_cotacao(
+        self,
+        solicitacao_id: int,
+        dias_atras: int = 7
+    ) -> List[dict]:
+        """
+        Lê emails de resposta relacionados a uma solicitação de cotação
+
+        Args:
+            solicitacao_id: ID da solicitação para filtrar
+            dias_atras: Quantos dias para trás buscar
+
+        Returns:
+            Lista de emails encontrados com seus dados
+        """
+        if not self.is_configured:
+            print("[EMAIL] Serviço não configurado. Pulando leitura.")
+            return []
+
+        emails_encontrados = []
+
+        try:
+            # Conectar via IMAP
+            mail = imaplib.IMAP4_SSL(self.imap_host, self.imap_port)
+            mail.login(self.smtp_user, self.smtp_password)
+            mail.select('INBOX')
+
+            # Buscar emails dos últimos N dias
+            data_inicio = (datetime.now() - timedelta(days=dias_atras)).strftime('%d-%b-%Y')
+
+            # Buscar emails com o ID da solicitação no assunto
+            search_criteria = f'(SINCE "{data_inicio}" SUBJECT "COTAÇÃO #{solicitacao_id}")'
+
+            status, messages = mail.search(None, search_criteria)
+
+            if status != 'OK':
+                print(f"[EMAIL] Nenhum email encontrado para solicitação #{solicitacao_id}")
+                return []
+
+            email_ids = messages[0].split()
+
+            for email_id in email_ids:
+                status, msg_data = mail.fetch(email_id, '(RFC822)')
+
+                if status != 'OK':
+                    continue
+
+                raw_email = msg_data[0][1]
+                msg = email.message_from_bytes(raw_email)
+
+                # Extrair dados do email
+                remetente = self._decode_header(msg['From'])
+                assunto = self._decode_header(msg['Subject'])
+                data = msg['Date']
+
+                # Extrair corpo do email
+                corpo = self._extrair_corpo(msg)
+
+                # Extrair email do remetente
+                email_match = re.search(r'[\w\.-]+@[\w\.-]+', remetente)
+                email_remetente = email_match.group(0) if email_match else remetente
+
+                emails_encontrados.append({
+                    'id': email_id.decode(),
+                    'remetente': remetente,
+                    'email_remetente': email_remetente,
+                    'assunto': assunto,
+                    'data': data,
+                    'corpo': corpo
+                })
+
+            mail.logout()
+
+            print(f"[EMAIL] Encontrados {len(emails_encontrados)} emails para solicitação #{solicitacao_id}")
+            return emails_encontrados
+
+        except Exception as e:
+            print(f"[EMAIL] ERRO ao ler emails: {e}")
+            return []
+
+    def _decode_header(self, header: str) -> str:
+        """Decodifica header de email"""
+        if not header:
+            return ""
+
+        decoded_parts = decode_header(header)
+        result = []
+
+        for part, encoding in decoded_parts:
+            if isinstance(part, bytes):
+                result.append(part.decode(encoding or 'utf-8', errors='ignore'))
+            else:
+                result.append(part)
+
+        return ' '.join(result)
+
+    def _extrair_corpo(self, msg) -> str:
+        """Extrai corpo do email (prefere texto puro)"""
+        corpo = ""
+
+        if msg.is_multipart():
+            for part in msg.walk():
+                content_type = part.get_content_type()
+
+                if content_type == 'text/plain':
+                    payload = part.get_payload(decode=True)
+                    if payload:
+                        charset = part.get_content_charset() or 'utf-8'
+                        corpo = payload.decode(charset, errors='ignore')
+                        break
+                elif content_type == 'text/html' and not corpo:
+                    payload = part.get_payload(decode=True)
+                    if payload:
+                        charset = part.get_content_charset() or 'utf-8'
+                        # Remove tags HTML básicas
+                        html_content = payload.decode(charset, errors='ignore')
+                        corpo = re.sub(r'<[^>]+>', ' ', html_content)
+                        corpo = re.sub(r'\s+', ' ', corpo).strip()
+        else:
+            payload = msg.get_payload(decode=True)
+            if payload:
+                charset = msg.get_content_charset() or 'utf-8'
+                corpo = payload.decode(charset, errors='ignore')
+
+        return corpo
+
+
+    def enviar_notificacao_vencedor(
+        self,
+        fornecedor_email: str,
+        fornecedor_nome: str,
+        solicitacao_numero: str,
+        solicitacao_titulo: str,
+        itens: List[dict],
+        valor_total: float,
+        prazo_entrega: Optional[int] = None,
+        condicao_pagamento: Optional[str] = None
+    ) -> bool:
+        """
+        Envia email de notificação ao fornecedor vencedor da cotação
+
+        Args:
+            fornecedor_email: Email do fornecedor
+            fornecedor_nome: Nome do fornecedor
+            solicitacao_numero: Número da solicitação (ex: SC-2024-0001)
+            solicitacao_titulo: Título da solicitação
+            itens: Lista de itens com produto_nome, quantidade, preco_unitario, preco_total
+            valor_total: Valor total da proposta vencedora
+            prazo_entrega: Prazo de entrega em dias
+            condicao_pagamento: Condição de pagamento
+
+        Returns:
+            True se enviado com sucesso
+        """
+        assunto = f"[VENCEDOR] {solicitacao_numero} - Sua proposta foi aceita!"
+
+        # Criar HTML dos itens
+        itens_html = ""
+        for i, item in enumerate(itens, 1):
+            itens_html += f"""
+            <tr>
+                <td style="padding: 12px; border-bottom: 1px solid #eee;">{i}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #eee;"><strong>{item.get('produto_nome', 'N/A')}</strong></td>
+                <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center;">{item.get('quantidade', 0)}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right;">R$ {item.get('preco_unitario', 0):,.2f}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right;">R$ {item.get('preco_total', 0):,.2f}</td>
+            </tr>
+            """
+
+        prazo_html = f"<p><strong>Prazo de Entrega:</strong> {prazo_entrega} dias</p>" if prazo_entrega else ""
+        condicao_html = f"<p><strong>Condição de Pagamento:</strong> {condicao_pagamento}</p>" if condicao_pagamento else ""
+
+        corpo_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+        .container {{ max-width: 700px; margin: 0 auto; padding: 20px; }}
+        .header {{ background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
+        .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
+        .footer {{ text-align: center; margin-top: 20px; color: #666; font-size: 12px; }}
+        .destaque {{ background: #ecfdf5; border: 2px solid #10b981; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: center; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; background: white; }}
+        th {{ background: #10b981; color: white; padding: 12px; text-align: left; }}
+        .total {{ background: #f0fdf4; font-weight: bold; }}
+        .proximos-passos {{ background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 style="margin: 0;">🎉 Parabéns!</h1>
+            <p style="margin: 10px 0 0 0; font-size: 18px;">Sua proposta foi aceita!</p>
+        </div>
+        <div class="content">
+            <p>Prezado(a) <strong>{fornecedor_nome}</strong>,</p>
+
+            <p>Temos o prazer de informar que sua proposta para a cotação <strong>{solicitacao_numero}</strong> foi <span style="color: #10b981; font-weight: bold;">ACEITA</span>!</p>
+
+            <div class="destaque">
+                <h2 style="color: #059669; margin: 0 0 10px 0;">{solicitacao_titulo}</h2>
+                <p style="font-size: 24px; margin: 0; color: #059669;">Valor Total: R$ {valor_total:,.2f}</p>
+            </div>
+
+            <h3 style="color: #10b981;">Itens da Proposta Vencedora</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 50px;">#</th>
+                        <th>Produto</th>
+                        <th style="width: 80px; text-align: center;">Qtd</th>
+                        <th style="width: 120px; text-align: right;">Preço Unit.</th>
+                        <th style="width: 120px; text-align: right;">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {itens_html}
+                    <tr class="total">
+                        <td colspan="4" style="padding: 12px; text-align: right;"><strong>TOTAL:</strong></td>
+                        <td style="padding: 12px; text-align: right;"><strong>R$ {valor_total:,.2f}</strong></td>
+                    </tr>
+                </tbody>
+            </table>
+
+            {prazo_html}
+            {condicao_html}
+
+            <div class="proximos-passos">
+                <strong>📋 Próximos Passos:</strong>
+                <ul style="margin: 10px 0 0 0;">
+                    <li>Em breve você receberá o <strong>Pedido de Compra</strong> oficial</li>
+                    <li>Aguarde o contato do nosso departamento de compras para confirmar os detalhes</li>
+                    <li>Prepare-se para o faturamento e entrega conforme acordado</li>
+                </ul>
+            </div>
+
+            <p>Agradecemos pela sua participação e esperamos continuar essa parceria de sucesso!</p>
+
+            <p>Atenciosamente,<br>
+            <strong>Departamento de Compras</strong></p>
+        </div>
+        <div class="footer">
+            <p>Este é um email automático do Sistema de Gestão de Compras</p>
+            <p>Referência: {solicitacao_numero}</p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+        # Criar versão texto dos itens
+        itens_texto = ""
+        for i, item in enumerate(itens, 1):
+            itens_texto += f"  {i}. {item.get('produto_nome', 'N/A')} - Qtd: {item.get('quantidade', 0)} - R$ {item.get('preco_unitario', 0):,.2f} - Total: R$ {item.get('preco_total', 0):,.2f}\n"
+
+        corpo_texto = f"""
+🎉 PARABÉNS! Sua proposta foi ACEITA!
+
+Prezado(a) {fornecedor_nome},
+
+Temos o prazer de informar que sua proposta para a cotação {solicitacao_numero} foi ACEITA!
+
+{solicitacao_titulo}
+Valor Total: R$ {valor_total:,.2f}
+
+ITENS DA PROPOSTA VENCEDORA:
+-------------------------------------------
+{itens_texto}
+-------------------------------------------
+TOTAL: R$ {valor_total:,.2f}
+
+{f'Prazo de Entrega: {prazo_entrega} dias' if prazo_entrega else ''}
+{f'Condição de Pagamento: {condicao_pagamento}' if condicao_pagamento else ''}
+
+PRÓXIMOS PASSOS:
+- Em breve você receberá o Pedido de Compra oficial
+- Aguarde o contato do nosso departamento de compras para confirmar os detalhes
+- Prepare-se para o faturamento e entrega conforme acordado
+
+Agradecemos pela sua participação e esperamos continuar essa parceria de sucesso!
+
+Atenciosamente,
+Departamento de Compras
+
+Referência: {solicitacao_numero}
+"""
+
+        return self.enviar_email(
+            destinatario=fornecedor_email,
+            assunto=assunto,
+            corpo_html=corpo_html,
+            corpo_texto=corpo_texto
+        )
+
+
+# Instância singleton
+email_service = EmailService()
