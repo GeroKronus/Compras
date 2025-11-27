@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import Login from '@/pages/auth/Login';
 import Dashboard from '@/pages/Dashboard';
+import MasterDashboard from '@/pages/MasterDashboard';
 import { Categorias } from '@/pages/Categorias';
 import { Produtos } from '@/pages/Produtos';
 import { Fornecedores } from '@/pages/Fornecedores';
@@ -45,6 +46,30 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Componente para redirecionar baseado no tipo de usuario
+function SmartDashboard() {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          <p className="mt-4 text-muted-foreground">Carregando...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Se for MASTER, mostra o dashboard de administracao
+  if (user?.tipo === 'master') {
+    return <MasterDashboard />;
+  }
+
+  // Caso contrario, mostra o dashboard normal de compras
+  return <Dashboard />;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -55,7 +80,7 @@ function App() {
             path="/dashboard"
             element={
               <ProtectedRoute>
-                <Dashboard />
+                <SmartDashboard />
               </ProtectedRoute>
             }
           />
