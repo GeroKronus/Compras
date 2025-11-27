@@ -45,7 +45,7 @@ class SolicitacaoCotacao(Base, TenantMixin, TimestampMixin, AuditMixin):
 
     # Status
     status = Column(
-        Enum(StatusSolicitacao, name='status_solicitacao_enum', create_type=False),
+        Enum(StatusSolicitacao, name='status_solicitacao_enum', create_type=True),
         default=StatusSolicitacao.RASCUNHO,
         nullable=False
     )
@@ -123,7 +123,7 @@ class PropostaFornecedor(Base, TenantMixin, TimestampMixin, AuditMixin):
 
     # Status
     status = Column(
-        Enum(StatusProposta, name='status_proposta_enum', create_type=False),
+        Enum(StatusProposta, name='status_proposta_enum', create_type=True),
         default=StatusProposta.PENDENTE,
         nullable=False
     )

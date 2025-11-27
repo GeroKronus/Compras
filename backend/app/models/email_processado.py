@@ -25,17 +25,17 @@ class MetodoClassificacao(str, enum.Enum):
     MANUAL = "manual"               # Classificado manualmente pelo usuario
 
 
-# Usar tipos PostgreSQL já existentes no banco
+# Criar tipos PostgreSQL ENUM
 status_email_enum = PG_ENUM(
     'pendente', 'classificado', 'ignorado', 'erro',
     name='statusemailprocessado',
-    create_type=False
+    create_type=True
 )
 
 metodo_classificacao_enum = PG_ENUM(
     'assunto', 'remetente', 'ia', 'manual',
     name='metodoclassificacao',
-    create_type=False
+    create_type=True
 )
 
 
