@@ -480,6 +480,8 @@ def enviar_email_teste_publico(
     Exemplo: /api/v1/emails/teste/seu@email.com
     """
     import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
 
     if not email_service.is_configured:
         raise HTTPException(
@@ -487,45 +489,30 @@ def enviar_email_teste_publico(
             detail="Email nao configurado. Configure SMTP_USER e SMTP_PASSWORD no Railway."
         )
 
-    corpo_html = """
-<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"></head>
-<body style="font-family: Arial, sans-serif; padding: 20px;">
-    <div style="max-width: 500px; margin: 0 auto; background: #f9f9f9; border-radius: 10px; overflow: hidden;">
-        <div style="background: #3b82f6; color: white; padding: 20px; text-align: center;">
-            <h2 style="margin: 0;">Sistema de Compras</h2>
-        </div>
-        <div style="padding: 20px;">
-            <div style="background: #10b981; color: white; padding: 15px; border-radius: 8px; text-align: center;">
-                ✅ Email funcionando!
-            </div>
-            <p style="margin-top: 20px;">Configuracao SMTP OK.</p>
-        </div>
-    </div>
-</body>
-</html>
-"""
-
     try:
-        sucesso = email_service.enviar_email(
-            destinatario=email_destino,
-            assunto="Teste - Sistema de Compras",
-            corpo_html=corpo_html,
-            corpo_texto="Teste de Email - Sistema de Compras - Configuracao SMTP OK!"
-        )
+        # Teste direto de conexao SMTP
+        msg = MIMEMultipart('alternative')
+        msg['From'] = settings.EMAIL_FROM or settings.SMTP_USER
+        msg['To'] = email_destino
+        msg['Subject'] = "Teste - Sistema de Compras"
 
-        if sucesso:
-            return {"sucesso": True, "para": email_destino}
-        else:
-            raise HTTPException(status_code=500, detail="Falha ao enviar. Verifique logs do servidor.")
+        corpo = "<h1>Email funcionando!</h1><p>Teste OK.</p>"
+        msg.attach(MIMEText(corpo, 'html', 'utf-8'))
+
+        # Conectar SSL
+        server = smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, timeout=30)
+        server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+        server.sendmail(settings.SMTP_USER, email_destino, msg.as_string())
+        server.quit()
+
+        return {"sucesso": True, "para": email_destino, "de": settings.SMTP_USER}
 
     except smtplib.SMTPAuthenticationError as e:
-        raise HTTPException(status_code=401, detail=f"Erro de autenticacao SMTP: {str(e)}. Use 'Senha de Aplicativo' do Zoho.")
+        raise HTTPException(status_code=401, detail=f"Erro autenticacao: {e.smtp_code} - {e.smtp_error}")
     except smtplib.SMTPException as e:
-        raise HTTPException(status_code=500, detail=f"Erro SMTP: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro SMTP: {type(e).__name__} - {str(e)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro: {type(e).__name__} - {str(e)}")
 
 
 @router.post("/teste/enviar")
