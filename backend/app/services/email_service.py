@@ -31,8 +31,10 @@ class EmailService:
 
     @property
     def is_configured(self) -> bool:
-        """Verifica se o serviço de email está configurado"""
-        return bool(self.smtp_user and self.smtp_password)
+        """Verifica se o serviço de email está configurado (verifica dinamicamente)"""
+        smtp_user = getattr(settings, 'SMTP_USER', '')
+        smtp_password = getattr(settings, 'SMTP_PASSWORD', '')
+        return bool(smtp_user and smtp_password)
 
     def enviar_email(
         self,
@@ -53,14 +55,21 @@ class EmailService:
         Returns:
             True se enviado com sucesso
         """
-        if not self.is_configured:
-            print("[EMAIL] Serviço não configurado. Pulando envio.")
+        # Recarregar configurações do settings (importante para Railway)
+        smtp_host = getattr(settings, 'SMTP_HOST', 'smtppro.zoho.com')
+        smtp_port = getattr(settings, 'SMTP_PORT', 465)
+        smtp_user = getattr(settings, 'SMTP_USER', '')
+        smtp_password = getattr(settings, 'SMTP_PASSWORD', '')
+        email_from = getattr(settings, 'EMAIL_FROM', '') or smtp_user
+
+        if not smtp_user or not smtp_password:
+            print(f"[EMAIL] Serviço não configurado. SMTP_USER={bool(smtp_user)}, SMTP_PASSWORD={bool(smtp_password)}")
             return False
 
         try:
             # Criar mensagem
             msg = MIMEMultipart('alternative')
-            msg['From'] = self.email_from
+            msg['From'] = email_from
             msg['To'] = destinatario
             msg['Subject'] = assunto
 
@@ -69,24 +78,35 @@ class EmailService:
                 msg.attach(MIMEText(corpo_texto, 'plain', 'utf-8'))
             msg.attach(MIMEText(corpo_html, 'html', 'utf-8'))
 
-            # Conectar e enviar
-            if self.smtp_port == 465:
-                # SSL
-                server = smtplib.SMTP_SSL(self.smtp_host, self.smtp_port)
-            else:
-                # TLS
-                server = smtplib.SMTP(self.smtp_host, self.smtp_port)
-                server.starttls()
+            # Conectar e enviar via SSL (porta 465)
+            print(f"[EMAIL] Conectando a {smtp_host}:{smtp_port}...")
+            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30)
 
-            server.login(self.smtp_user, self.smtp_password)
-            server.sendmail(self.email_from, destinatario, msg.as_string())
+            print(f"[EMAIL] Fazendo login como {smtp_user}...")
+            server.login(smtp_user, smtp_password)
+
+            print(f"[EMAIL] Enviando de {email_from} para {destinatario}...")
+            result = server.sendmail(email_from, destinatario, msg.as_string())
+
             server.quit()
 
-            print(f"[EMAIL] Enviado com sucesso para: {destinatario}")
+            if result:
+                print(f"[EMAIL] Alguns destinatários falharam: {result}")
+            else:
+                print(f"[EMAIL] Enviado com sucesso para: {destinatario}")
             return True
 
+        except smtplib.SMTPAuthenticationError as e:
+            print(f"[EMAIL] ERRO de autenticação: {e.smtp_code} - {e.smtp_error}")
+            return False
+        except smtplib.SMTPRecipientsRefused as e:
+            print(f"[EMAIL] Destinatário recusado: {e.recipients}")
+            return False
+        except smtplib.SMTPException as e:
+            print(f"[EMAIL] ERRO SMTP ({type(e).__name__}): {e}")
+            return False
         except Exception as e:
-            print(f"[EMAIL] ERRO ao enviar para {destinatario}: {e}")
+            print(f"[EMAIL] ERRO ao enviar para {destinatario}: {type(e).__name__} - {e}")
             return False
 
     def enviar_solicitacao_cotacao(
