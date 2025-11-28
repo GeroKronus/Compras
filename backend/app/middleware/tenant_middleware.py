@@ -33,6 +33,12 @@ class TenantMiddleware(BaseHTTPMiddleware):
         "/api/v1/tenants/register",  # Registro de novos tenants
         "/api/v1/setup/status",  # Verificar status do setup
         "/api/v1/setup/init",  # Inicializar sistema
+        "/api/v1/emails/config/status",  # Verificar config de email
+    ]
+
+    # Prefixos de rotas públicas (para rotas dinâmicas)
+    PUBLIC_PREFIXES = [
+        "/api/v1/emails/teste/",  # Teste de email
     ]
 
     async def dispatch(self, request: Request, call_next):
@@ -48,7 +54,9 @@ class TenantMiddleware(BaseHTTPMiddleware):
         # Rotas públicas passam direto
         # Inclui arquivos estáticos (assets, imagens, etc)
         # E rotas do frontend SPA (tudo que não começa com /api/)
+        is_public_prefix = any(path.startswith(prefix) for prefix in self.PUBLIC_PREFIXES)
         if (path in self.PUBLIC_PATHS or
+            is_public_prefix or
             path.startswith("/static") or
             path.startswith("/assets") or
             path.endswith(".css") or
