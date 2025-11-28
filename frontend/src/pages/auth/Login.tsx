@@ -24,7 +24,15 @@ export default function Login() {
       await authService.login(formData);
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Erro ao fazer login');
+      const detail = err.response?.data?.detail;
+      if (typeof detail === 'string') {
+        setError(detail);
+      } else if (Array.isArray(detail)) {
+        // Erro de validação Pydantic (422)
+        setError(detail.map((e: any) => e.msg).join(', ') || 'Erro de validação');
+      } else {
+        setError('Erro ao fazer login');
+      }
     } finally {
       setIsLoading(false);
     }
