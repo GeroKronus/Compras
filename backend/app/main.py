@@ -108,12 +108,15 @@ def startup_event():
     except Exception as e:
         print(f"[STARTUP] Erro ao criar tabelas: {e}")
 
-    # Iniciar job de verificacao de emails se habilitado
-    if getattr(settings, 'ENABLE_SCHEDULED_JOBS', False):
+    # Iniciar job de verificacao de emails automaticamente
+    # Pode ser desabilitado com ENABLE_SCHEDULED_JOBS=false
+    enable_jobs = getattr(settings, 'ENABLE_SCHEDULED_JOBS', True)  # True por padrão
+    if enable_jobs or str(enable_jobs).lower() not in ('false', '0', 'no'):
         try:
             from app.jobs.email_job import iniciar_scheduler
-            iniciar_scheduler(intervalo_minutos=5)
-            print("[STARTUP] Job de verificacao de emails iniciado")
+            intervalo = int(getattr(settings, 'EMAIL_CHECK_INTERVAL', 5))
+            iniciar_scheduler(intervalo_minutos=intervalo)
+            print(f"[STARTUP] Job de verificacao de emails iniciado (a cada {intervalo} min)")
         except Exception as e:
             print(f"[STARTUP] Erro ao iniciar job de emails: {e}")
 
