@@ -476,6 +476,78 @@ def verificar_config_email(
     }
 
 
+@router.get("/teste/enviar/{email_destino}")
+def enviar_email_teste_get(
+    email_destino: str,
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    Enviar email de teste via GET (para teste rapido no navegador).
+
+    Exemplo: /api/v1/emails/teste/enviar/seu@email.com
+    """
+    if not email_service.is_configured:
+        raise HTTPException(
+            status_code=503,
+            detail="Servico de email nao configurado. Configure SMTP_USER e SMTP_PASSWORD."
+        )
+
+    corpo_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+        .header {{ background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
+        .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
+        .success {{ background: #10b981; color: white; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0; }}
+        .footer {{ text-align: center; margin-top: 20px; color: #666; font-size: 12px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 style="margin: 0;">Sistema de Compras</h1>
+            <p style="margin: 10px 0 0 0;">Teste de Email</p>
+        </div>
+        <div class="content">
+            <div class="success">
+                ✅ Email enviado com sucesso!
+            </div>
+            <p>Este e um email de teste do Sistema de Gestao de Compras.</p>
+            <p><strong>Enviado por:</strong> {current_user.nome_completo} ({current_user.email})</p>
+        </div>
+        <div class="footer">
+            <p>Se voce recebeu este email, a configuracao SMTP esta funcionando corretamente.</p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+    sucesso = email_service.enviar_email(
+        destinatario=email_destino,
+        assunto="Teste de Email - Sistema de Compras",
+        corpo_html=corpo_html,
+        corpo_texto=f"Teste de Email - Sistema de Compras\n\nEnviado por: {current_user.nome_completo}"
+    )
+
+    if sucesso:
+        return {
+            "sucesso": True,
+            "mensagem": f"Email de teste enviado para {email_destino}",
+            "de": settings.EMAIL_FROM or settings.SMTP_USER,
+            "para": email_destino
+        }
+    else:
+        raise HTTPException(
+            status_code=500,
+            detail="Falha ao enviar email. Verifique as credenciais SMTP."
+        )
+
+
 @router.post("/teste/enviar")
 def enviar_email_teste(
     dados: TesteEmailRequest,
