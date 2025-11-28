@@ -225,7 +225,8 @@ class PDFService:
         y -= 10
 
         # Box verde claro
-        box_height = 30 + (len(itens) * 25) + 130
+        # Cálculo: 25 (instruções) + 22 (cabeçalho) + itens*25 + 15 (espaço) + 5*22 (campos gerais) + margem
+        box_height = 50 + (len(itens) * 25) + 160
         c.setStrokeColor(colors.HexColor('#10b981'))
         c.setFillColor(colors.HexColor('#ecfdf5'))
         c.roundRect(20, y - box_height, width - 40, box_height, 5, fill=True, stroke=True)

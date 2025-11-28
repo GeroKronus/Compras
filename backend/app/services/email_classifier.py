@@ -27,11 +27,15 @@ class EmailClassifier:
     """
 
     # Padroes para extrair ID da solicitacao do assunto
+    # Suporta tanto formato com ID numerico quanto com numero formatado (SOL-2024-XXXX)
     PADROES_ASSUNTO = [
         r'COTACAO\s*#\s*(\d+)',
         r'COTACAO-(\d+)',
         r'COTACAO\s+(\d+)',
         r'Re:\s*\[COTACAO\s*#\s*(\d+)\]',
+        r'\[COTACAO\s+SOL-\d{4}-(\d+)\]',  # [COTAÇÃO SOL-2024-0001] -> extrai 0001
+        r'SOL-\d{4}-(\d+)',  # SOL-2024-0001 -> extrai 0001
+        r'Referencia:\s*COTACAO-(\d+)',  # Referência: COTACAO-123
     ]
 
     def processar_emails_novos(
@@ -436,8 +440,14 @@ class EmailClassifier:
         if not assunto:
             return None
 
+        # Normalizar assunto: remover acentos e converter para maiusculas
+        import unicodedata
+        assunto_normalizado = unicodedata.normalize('NFD', assunto)
+        assunto_normalizado = ''.join(c for c in assunto_normalizado if unicodedata.category(c) != 'Mn')
+        assunto_normalizado = assunto_normalizado.upper()
+
         for padrao in self.PADROES_ASSUNTO:
-            match = re.search(padrao, assunto.upper())
+            match = re.search(padrao, assunto_normalizado)
             if match:
                 solicitacao_id = int(match.group(1))
                 # Verificar se solicitacao existe
