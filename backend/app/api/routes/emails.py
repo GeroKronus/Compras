@@ -479,6 +479,8 @@ def enviar_email_teste_publico(
     Enviar email de teste (publico, sem autenticacao).
     Exemplo: /api/v1/emails/teste/seu@email.com
     """
+    import smtplib
+
     if not email_service.is_configured:
         raise HTTPException(
             status_code=503,
@@ -505,17 +507,25 @@ def enviar_email_teste_publico(
 </html>
 """
 
-    sucesso = email_service.enviar_email(
-        destinatario=email_destino,
-        assunto="Teste - Sistema de Compras",
-        corpo_html=corpo_html,
-        corpo_texto="Teste de Email - Sistema de Compras - Configuracao SMTP OK!"
-    )
+    try:
+        sucesso = email_service.enviar_email(
+            destinatario=email_destino,
+            assunto="Teste - Sistema de Compras",
+            corpo_html=corpo_html,
+            corpo_texto="Teste de Email - Sistema de Compras - Configuracao SMTP OK!"
+        )
 
-    if sucesso:
-        return {"sucesso": True, "para": email_destino}
-    else:
-        raise HTTPException(status_code=500, detail="Falha ao enviar. Verifique credenciais SMTP.")
+        if sucesso:
+            return {"sucesso": True, "para": email_destino}
+        else:
+            raise HTTPException(status_code=500, detail="Falha ao enviar. Verifique logs do servidor.")
+
+    except smtplib.SMTPAuthenticationError as e:
+        raise HTTPException(status_code=401, detail=f"Erro de autenticacao SMTP: {str(e)}. Use 'Senha de Aplicativo' do Zoho.")
+    except smtplib.SMTPException as e:
+        raise HTTPException(status_code=500, detail=f"Erro SMTP: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro: {str(e)}")
 
 
 @router.post("/teste/enviar")
