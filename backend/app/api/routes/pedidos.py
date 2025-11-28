@@ -5,6 +5,7 @@ from typing import Optional
 from datetime import datetime
 from decimal import Decimal
 from app.api.deps import get_db, get_current_tenant_id, get_current_user
+from app.api.utils import get_by_id, validate_fk, paginate_response
 from app.models.pedido import PedidoCompra, ItemPedido, StatusPedido
 from app.models.cotacao import PropostaFornecedor, ItemProposta, SolicitacaoCotacao, StatusProposta
 from app.models.produto import Produto
@@ -156,21 +157,13 @@ def listar_pedidos(
     if fornecedor_id:
         query = query.filter(PedidoCompra.fornecedor_id == fornecedor_id)
     if busca:
-        query = query.filter(
-            PedidoCompra.numero.ilike(f"%{busca}%")
-        )
+        query = query.filter(PedidoCompra.numero.ilike(f"%{busca}%"))
 
-    total = query.count()
-    pedidos = query.order_by(PedidoCompra.created_at.desc()).offset(
-        (page - 1) * page_size
-    ).limit(page_size).all()
-
-    return {
-        "items": [_enrich_pedido_response(p, db) for p in pedidos],
-        "total": total,
-        "page": page,
-        "page_size": page_size
-    }
+    return paginate_response(
+        query, page, page_size,
+        order_by=PedidoCompra.created_at.desc(),
+        transform_fn=lambda p: _enrich_pedido_response(p, db)
+    )
 
 
 @router.get("/{pedido_id}", response_model=PedidoCompraResponse)
@@ -180,18 +173,15 @@ def obter_pedido(
     tenant_id: int = Depends(get_current_tenant_id)
 ):
     """Obter pedido por ID"""
-    pedido = db.query(PedidoCompra).filter(
-        PedidoCompra.id == pedido_id,
-        PedidoCompra.tenant_id == tenant_id
-    ).options(
-        joinedload(PedidoCompra.fornecedor),
-        joinedload(PedidoCompra.itens).joinedload(ItemPedido.produto),
-        joinedload(PedidoCompra.solicitacao_cotacao)
-    ).first()
-
-    if not pedido:
-        raise HTTPException(status_code=404, detail="Pedido nao encontrado")
-
+    pedido = get_by_id(
+        db, PedidoCompra, pedido_id, tenant_id,
+        error_message="Pedido nao encontrado",
+        options=[
+            joinedload(PedidoCompra.fornecedor),
+            joinedload(PedidoCompra.itens).joinedload(ItemPedido.produto),
+            joinedload(PedidoCompra.solicitacao_cotacao)
+        ]
+    )
     return _enrich_pedido_response(pedido, db)
 
 
@@ -203,22 +193,10 @@ def criar_pedido(
     current_user: Usuario = Depends(get_current_user)
 ):
     """Criar novo pedido de compra manualmente"""
-    # Validar fornecedor
-    fornecedor = db.query(Fornecedor).filter(
-        Fornecedor.id == pedido_data.fornecedor_id,
-        Fornecedor.tenant_id == tenant_id
-    ).first()
-    if not fornecedor:
-        raise HTTPException(status_code=404, detail="Fornecedor nao encontrado")
-
-    # Validar produtos
+    # Validar fornecedor e produtos usando helpers DRY
+    validate_fk(db, Fornecedor, pedido_data.fornecedor_id, tenant_id, "Fornecedor")
     for item in pedido_data.itens:
-        produto = db.query(Produto).filter(
-            Produto.id == item.produto_id,
-            Produto.tenant_id == tenant_id
-        ).first()
-        if not produto:
-            raise HTTPException(status_code=404, detail=f"Produto {item.produto_id} nao encontrado")
+        validate_fk(db, Produto, item.produto_id, tenant_id, f"Produto {item.produto_id}")
 
     # Criar pedido
     pedido = PedidoCompra(
@@ -282,17 +260,15 @@ def criar_pedido_from_cotacao(
     - Prazo de entrega
     - Itens com precos da proposta
     """
-    # Buscar proposta
-    proposta = db.query(PropostaFornecedor).filter(
-        PropostaFornecedor.id == data.proposta_id,
-        PropostaFornecedor.tenant_id == tenant_id
-    ).options(
-        joinedload(PropostaFornecedor.itens).joinedload(ItemProposta.item_solicitacao),
-        joinedload(PropostaFornecedor.solicitacao)
-    ).first()
-
-    if not proposta:
-        raise HTTPException(status_code=404, detail="Proposta nao encontrada")
+    # Buscar proposta usando helper
+    proposta = get_by_id(
+        db, PropostaFornecedor, data.proposta_id, tenant_id,
+        error_message="Proposta nao encontrada",
+        options=[
+            joinedload(PropostaFornecedor.itens).joinedload(ItemProposta.item_solicitacao),
+            joinedload(PropostaFornecedor.solicitacao)
+        ]
+    )
 
     if proposta.status != StatusProposta.VENCEDORA:
         raise HTTPException(status_code=400, detail="Apenas propostas vencedoras podem gerar pedidos")
@@ -371,13 +347,7 @@ def atualizar_pedido(
     tenant_id: int = Depends(get_current_tenant_id)
 ):
     """Atualizar pedido (apenas em RASCUNHO)"""
-    pedido = db.query(PedidoCompra).filter(
-        PedidoCompra.id == pedido_id,
-        PedidoCompra.tenant_id == tenant_id
-    ).first()
-
-    if not pedido:
-        raise HTTPException(status_code=404, detail="Pedido nao encontrado")
+    pedido = get_by_id(db, PedidoCompra, pedido_id, tenant_id, error_message="Pedido nao encontrado")
 
     if pedido.status != StatusPedido.RASCUNHO:
         raise HTTPException(status_code=400, detail="Apenas pedidos em rascunho podem ser editados")
@@ -401,13 +371,7 @@ def excluir_pedido(
     tenant_id: int = Depends(get_current_tenant_id)
 ):
     """Excluir pedido (apenas em RASCUNHO)"""
-    pedido = db.query(PedidoCompra).filter(
-        PedidoCompra.id == pedido_id,
-        PedidoCompra.tenant_id == tenant_id
-    ).first()
-
-    if not pedido:
-        raise HTTPException(status_code=404, detail="Pedido nao encontrado")
+    pedido = get_by_id(db, PedidoCompra, pedido_id, tenant_id, error_message="Pedido nao encontrado")
 
     if pedido.status != StatusPedido.RASCUNHO:
         raise HTTPException(status_code=400, detail="Apenas pedidos em rascunho podem ser excluidos")
@@ -425,13 +389,7 @@ def enviar_para_aprovacao(
     tenant_id: int = Depends(get_current_tenant_id)
 ):
     """Enviar pedido para aprovacao"""
-    pedido = db.query(PedidoCompra).filter(
-        PedidoCompra.id == pedido_id,
-        PedidoCompra.tenant_id == tenant_id
-    ).first()
-
-    if not pedido:
-        raise HTTPException(status_code=404, detail="Pedido nao encontrado")
+    pedido = get_by_id(db, PedidoCompra, pedido_id, tenant_id, error_message="Pedido nao encontrado")
 
     if pedido.status != StatusPedido.RASCUNHO:
         raise HTTPException(status_code=400, detail="Apenas pedidos em rascunho podem ser enviados")
@@ -455,13 +413,7 @@ def aprovar_pedido(
     current_user: Usuario = Depends(get_current_user)
 ):
     """Aprovar pedido"""
-    pedido = db.query(PedidoCompra).filter(
-        PedidoCompra.id == pedido_id,
-        PedidoCompra.tenant_id == tenant_id
-    ).first()
-
-    if not pedido:
-        raise HTTPException(status_code=404, detail="Pedido nao encontrado")
+    pedido = get_by_id(db, PedidoCompra, pedido_id, tenant_id, error_message="Pedido nao encontrado")
 
     if pedido.status != StatusPedido.AGUARDANDO_APROVACAO:
         raise HTTPException(status_code=400, detail="Pedido nao esta aguardando aprovacao")
@@ -483,13 +435,7 @@ def enviar_para_fornecedor(
     tenant_id: int = Depends(get_current_tenant_id)
 ):
     """Marcar pedido como enviado ao fornecedor"""
-    pedido = db.query(PedidoCompra).filter(
-        PedidoCompra.id == pedido_id,
-        PedidoCompra.tenant_id == tenant_id
-    ).first()
-
-    if not pedido:
-        raise HTTPException(status_code=404, detail="Pedido nao encontrado")
+    pedido = get_by_id(db, PedidoCompra, pedido_id, tenant_id, error_message="Pedido nao encontrado")
 
     if pedido.status != StatusPedido.APROVADO:
         raise HTTPException(status_code=400, detail="Pedido precisa estar aprovado")
@@ -509,13 +455,7 @@ def confirmar_pedido(
     tenant_id: int = Depends(get_current_tenant_id)
 ):
     """Registrar confirmacao do fornecedor"""
-    pedido = db.query(PedidoCompra).filter(
-        PedidoCompra.id == pedido_id,
-        PedidoCompra.tenant_id == tenant_id
-    ).first()
-
-    if not pedido:
-        raise HTTPException(status_code=404, detail="Pedido nao encontrado")
+    pedido = get_by_id(db, PedidoCompra, pedido_id, tenant_id, error_message="Pedido nao encontrado")
 
     if pedido.status != StatusPedido.ENVIADO_FORNECEDOR:
         raise HTTPException(status_code=400, detail="Pedido precisa estar enviado ao fornecedor")
@@ -537,13 +477,7 @@ def cancelar_pedido(
     current_user: Usuario = Depends(get_current_user)
 ):
     """Cancelar pedido"""
-    pedido = db.query(PedidoCompra).filter(
-        PedidoCompra.id == pedido_id,
-        PedidoCompra.tenant_id == tenant_id
-    ).first()
-
-    if not pedido:
-        raise HTTPException(status_code=404, detail="Pedido nao encontrado")
+    pedido = get_by_id(db, PedidoCompra, pedido_id, tenant_id, error_message="Pedido nao encontrado")
 
     if pedido.status in [StatusPedido.ENTREGUE, StatusPedido.CANCELADO]:
         raise HTTPException(status_code=400, detail="Pedido nao pode ser cancelado")
@@ -565,13 +499,7 @@ def registrar_entrega(
     tenant_id: int = Depends(get_current_tenant_id)
 ):
     """Registrar entrega total do pedido"""
-    pedido = db.query(PedidoCompra).filter(
-        PedidoCompra.id == pedido_id,
-        PedidoCompra.tenant_id == tenant_id
-    ).first()
-
-    if not pedido:
-        raise HTTPException(status_code=404, detail="Pedido nao encontrado")
+    pedido = get_by_id(db, PedidoCompra, pedido_id, tenant_id, error_message="Pedido nao encontrado")
 
     if pedido.status not in [StatusPedido.CONFIRMADO, StatusPedido.EM_TRANSITO, StatusPedido.ENTREGUE_PARCIAL]:
         raise HTTPException(status_code=400, detail="Pedido precisa estar confirmado ou em transito")

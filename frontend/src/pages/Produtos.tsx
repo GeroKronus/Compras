@@ -1,8 +1,14 @@
+/**
+ * Produtos - Página refatorada usando useCrudResource e FormField
+ * Mantém funcionalidades especializadas (cotação, fornecedores)
+ */
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useCrudResource } from '../hooks/useCrudResource';
 import { api } from '../services/api';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { FormInput, FormTextarea, FormSelect, FormRow, FormActions } from '../components/ui/form-field';
 import { Modal } from '../components/Modal';
 import { useNavigate } from 'react-router-dom';
 import { EnvelopeIcon, CheckCircleIcon, ExclamationCircleIcon, UserGroupIcon, PlusIcon, XMarkIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
@@ -66,32 +72,26 @@ export function Produtos() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['produtos'],
-    queryFn: async () => {
-      const response = await api.get('/produtos/');
-      return response.data;
-    }
+  // Hook genérico CRUD - elimina 40 linhas de código duplicado
+  const { items, isLoading, create, update, remove } = useCrudResource<Produto>({
+    endpoint: '/produtos',
+    queryKey: 'produtos',
+    onCreateSuccess: () => setShowForm(false),
+    onUpdateSuccess: () => { setShowForm(false); setEditando(null); },
   });
 
-  const { data: categorias } = useQuery({
-    queryKey: ['categorias'],
-    queryFn: async () => {
-      const response = await api.get('/categorias/');
-      return response.data;
-    }
+  // Dados auxiliares usando useCrudResource
+  const { items: categoriasItems } = useCrudResource<Categoria>({
+    endpoint: '/categorias',
+    queryKey: 'categorias',
   });
 
-  // Lista de todos os fornecedores disponíveis
-  const { data: todosFornecedores } = useQuery({
-    queryKey: ['fornecedores'],
-    queryFn: async () => {
-      const response = await api.get('/fornecedores/');
-      return response.data;
-    }
+  const { items: todosFornecedoresItems } = useCrudResource<Fornecedor & { email_principal?: string }>({
+    endpoint: '/fornecedores',
+    queryKey: 'fornecedores',
   });
 
-  // Fornecedores do produto selecionado
+  // Fornecedores do produto selecionado (query específica)
   const { data: fornecedoresDoProduto, refetch: refetchFornecedores } = useQuery({
     queryKey: ['produto-fornecedores', produtoFornecedores?.id],
     queryFn: async () => {
@@ -100,36 +100,6 @@ export function Produtos() {
       return response.data;
     },
     enabled: !!produtoFornecedores
-  });
-
-  const criarMutation = useMutation({
-    mutationFn: async (dados: any) => {
-      return await api.post('/produtos/', dados);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['produtos'] });
-      setShowForm(false);
-    }
-  });
-
-  const atualizarMutation = useMutation({
-    mutationFn: async ({ id, dados }: { id: number; dados: any }) => {
-      return await api.put(`/produtos/${id}`, dados);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['produtos'] });
-      setShowForm(false);
-      setEditando(null);
-    }
-  });
-
-  const deletarMutation = useMutation({
-    mutationFn: async (id: number) => {
-      return await api.delete(`/produtos/${id}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['produtos'] });
-    }
   });
 
   const cotacaoEmailMutation = useMutation({
@@ -231,11 +201,11 @@ export function Produtos() {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const dados = {
-      codigo: formData.get('codigo'),
-      nome: formData.get('nome'),
-      descricao: formData.get('descricao') || null,
+      codigo: formData.get('codigo') as string,
+      nome: formData.get('nome') as string,
+      descricao: formData.get('descricao') as string || null,
       categoria_id: formData.get('categoria_id') ? parseInt(formData.get('categoria_id') as string) : null,
-      unidade_medida: formData.get('unidade_medida') || 'UN',
+      unidade_medida: formData.get('unidade_medida') as string || 'UN',
       estoque_minimo: parseFloat(formData.get('estoque_minimo') as string) || 0,
       estoque_maximo: formData.get('estoque_maximo') ? parseFloat(formData.get('estoque_maximo') as string) : null,
       estoque_atual: parseFloat(formData.get('estoque_atual') as string) || 0,
@@ -244,9 +214,15 @@ export function Produtos() {
     };
 
     if (editando) {
-      atualizarMutation.mutate({ id: editando.id, dados });
+      update.mutate({ id: editando.id, data: dados });
     } else {
-      criarMutation.mutate(dados);
+      create.mutate(dados);
+    }
+  };
+
+  const handleDelete = (id: number) => {
+    if (confirm('Deseja excluir este produto?')) {
+      remove.mutate(id);
     }
   };
 
@@ -281,139 +257,117 @@ export function Produtos() {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Código *</label>
-                    <input
-                      name="codigo"
-                      defaultValue={editando?.codigo}
-                      required
-                      className="w-full border rounded px-3 py-2"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Nome *</label>
-                    <input
-                      name="nome"
-                      defaultValue={editando?.nome}
-                      required
-                      className="w-full border rounded px-3 py-2"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-1">Descrição</label>
-                  <textarea
-                    name="descricao"
-                    defaultValue={editando?.descricao || ''}
-                    className="w-full border rounded px-3 py-2"
-                    rows={3}
+                <FormRow>
+                  <FormInput
+                    name="codigo"
+                    label="Codigo"
+                    required
+                    defaultValue={editando?.codigo}
                   />
-                </div>
+                  <FormInput
+                    name="nome"
+                    label="Nome"
+                    required
+                    defaultValue={editando?.nome}
+                  />
+                </FormRow>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Categoria</label>
-                    <select
-                      name="categoria_id"
-                      defaultValue={editando?.categoria_id || ''}
-                      className="w-full border rounded px-3 py-2"
-                    >
-                      <option value="">Sem categoria</option>
-                      {categorias?.items?.map((cat: Categoria) => (
-                        <option key={cat.id} value={cat.id}>{cat.nome}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Unidade de Medida</label>
-                    <select
-                      name="unidade_medida"
-                      defaultValue={editando?.unidade_medida || 'UN'}
-                      className="w-full border rounded px-3 py-2"
-                    >
-                      <option value="UN">Unidade</option>
-                      <option value="KG">Quilograma</option>
-                      <option value="MT">Metro</option>
-                      <option value="LT">Litro</option>
-                      <option value="CX">Caixa</option>
-                      <option value="PC">Peça</option>
-                    </select>
-                  </div>
-                </div>
+                <FormTextarea
+                  name="descricao"
+                  label="Descricao"
+                  rows={3}
+                  defaultValue={editando?.descricao || ''}
+                />
 
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Estoque Mínimo</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      name="estoque_minimo"
-                      defaultValue={editando?.estoque_minimo || 0}
-                      className="w-full border rounded px-3 py-2"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Estoque Máximo</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      name="estoque_maximo"
-                      defaultValue={editando?.estoque_maximo || ''}
-                      className="w-full border rounded px-3 py-2"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Estoque Atual</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      name="estoque_atual"
-                      defaultValue={editando?.estoque_atual || 0}
-                      className="w-full border rounded px-3 py-2"
-                    />
-                  </div>
-                </div>
+                <FormRow>
+                  <FormSelect
+                    name="categoria_id"
+                    label="Categoria"
+                    placeholder="Sem categoria"
+                    defaultValue={editando?.categoria_id?.toString() || ''}
+                    options={categoriasItems.map((cat) => ({
+                      value: cat.id.toString(),
+                      label: cat.nome,
+                    }))}
+                  />
+                  <FormSelect
+                    name="unidade_medida"
+                    label="Unidade de Medida"
+                    defaultValue={editando?.unidade_medida || 'UN'}
+                    options={[
+                      { value: 'UN', label: 'Unidade' },
+                      { value: 'KG', label: 'Quilograma' },
+                      { value: 'MT', label: 'Metro' },
+                      { value: 'LT', label: 'Litro' },
+                      { value: 'CX', label: 'Caixa' },
+                      { value: 'PC', label: 'Peca' },
+                    ]}
+                  />
+                </FormRow>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Preço Referência</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      name="preco_referencia"
-                      defaultValue={editando?.preco_referencia || ''}
-                      className="w-full border rounded px-3 py-2"
-                      placeholder="0.00"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Status</label>
-                    <select
-                      name="ativo"
-                      defaultValue={editando?.ativo !== false ? 'true' : 'false'}
-                      className="w-full border rounded px-3 py-2"
-                    >
-                      <option value="true">Ativo</option>
-                      <option value="false">Inativo</option>
-                    </select>
-                  </div>
-                </div>
+                <FormRow cols={3}>
+                  <FormInput
+                    name="estoque_minimo"
+                    label="Estoque Minimo"
+                    type="number"
+                    step="0.01"
+                    defaultValue={editando?.estoque_minimo || 0}
+                  />
+                  <FormInput
+                    name="estoque_maximo"
+                    label="Estoque Maximo"
+                    type="number"
+                    step="0.01"
+                    defaultValue={editando?.estoque_maximo || ''}
+                  />
+                  <FormInput
+                    name="estoque_atual"
+                    label="Estoque Atual"
+                    type="number"
+                    step="0.01"
+                    defaultValue={editando?.estoque_atual || 0}
+                  />
+                </FormRow>
 
-                <div className="flex gap-2">
-                  <Button type="submit">Salvar</Button>
-                  <Button type="button" variant="outline" onClick={() => { setShowForm(false); setEditando(null); }}>
+                <FormRow>
+                  <FormInput
+                    name="preco_referencia"
+                    label="Preco Referencia"
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    defaultValue={editando?.preco_referencia || ''}
+                  />
+                  <FormSelect
+                    name="ativo"
+                    label="Status"
+                    defaultValue={editando?.ativo !== false ? 'true' : 'false'}
+                    options={[
+                      { value: 'true', label: 'Ativo' },
+                      { value: 'false', label: 'Inativo' },
+                    ]}
+                  />
+                </FormRow>
+
+                <FormActions>
+                  <Button type="submit" disabled={create.isPending || update.isPending}>
+                    {create.isPending || update.isPending ? 'Salvando...' : 'Salvar'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => { setShowForm(false); setEditando(null); }}
+                  >
                     Cancelar
                   </Button>
-                </div>
+                </FormActions>
               </form>
             </CardContent>
           </Card>
         )}
 
         <div className="grid gap-4">
-          {data?.items?.map((produto: Produto) => (
+          {items.map((produto) => (
             <Card key={produto.id}>
               <CardContent className="p-4">
                 <div className="flex justify-between items-start">
@@ -476,11 +430,8 @@ export function Produtos() {
                     <Button
                       size="sm"
                       variant="destructive"
-                      onClick={() => {
-                        if (confirm('Deseja excluir este produto?')) {
-                          deletarMutation.mutate(produto.id);
-                        }
-                      }}
+                      disabled={remove.isPending}
+                      onClick={() => handleDelete(produto.id)}
                     >
                       Excluir
                     </Button>
@@ -704,7 +655,7 @@ export function Produtos() {
                 Adicionar Fornecedores
               </h4>
 
-              {todosFornecedores?.items?.length > 0 ? (
+              {todosFornecedoresItems.length > 0 ? (
                 <>
                   {/* Campo de busca amplo */}
                   <div className="relative mb-3">
@@ -720,7 +671,7 @@ export function Produtos() {
 
                   {/* Contadores */}
                   {(() => {
-                    const fornecedoresDisponiveis = todosFornecedores.items
+                    const fornecedoresDisponiveis = todosFornecedoresItems
                       .filter((f: any) => !fornecedoresDoProduto?.fornecedores?.some((fp: Fornecedor) => fp.id === f.id));
                     const fornecedoresFiltrados = fornecedoresDisponiveis.filter((f: any) => {
                       if (!fornecedorSearchTerm) return true;

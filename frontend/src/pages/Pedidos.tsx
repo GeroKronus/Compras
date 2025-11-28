@@ -3,7 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { Button } from '../components/ui/button';
+import { Modal, ViewModal } from '../components/Modal';
 import { useAuth } from '../hooks/useAuth';
+import { statusColors, statusLabels, STATUS_FLOW, PedidoStatus } from '../config/statusConfig';
 import {
   MagnifyingGlassIcon,
   EyeIcon,
@@ -57,30 +59,6 @@ interface Pedido {
   motivo_cancelamento?: string;
   itens: ItemPedido[];
 }
-
-const statusColors: Record<string, string> = {
-  RASCUNHO: 'bg-gray-100 text-gray-800',
-  AGUARDANDO_APROVACAO: 'bg-yellow-100 text-yellow-800',
-  APROVADO: 'bg-blue-100 text-blue-800',
-  ENVIADO_FORNECEDOR: 'bg-indigo-100 text-indigo-800',
-  CONFIRMADO: 'bg-purple-100 text-purple-800',
-  EM_TRANSITO: 'bg-orange-100 text-orange-800',
-  ENTREGUE_PARCIAL: 'bg-teal-100 text-teal-800',
-  ENTREGUE: 'bg-green-100 text-green-800',
-  CANCELADO: 'bg-red-100 text-red-800',
-};
-
-const statusLabels: Record<string, string> = {
-  RASCUNHO: 'Rascunho',
-  AGUARDANDO_APROVACAO: 'Aguardando Aprovacao',
-  APROVADO: 'Aprovado',
-  ENVIADO_FORNECEDOR: 'Enviado ao Fornecedor',
-  CONFIRMADO: 'Confirmado',
-  EM_TRANSITO: 'Em Transito',
-  ENTREGUE_PARCIAL: 'Entregue Parcial',
-  ENTREGUE: 'Entregue',
-  CANCELADO: 'Cancelado',
-};
 
 export default function Pedidos() {
   const { tenant } = useAuth();
@@ -311,9 +289,9 @@ export default function Pedidos() {
                     <div className="px-4 py-3 bg-gray-50">
                       <h4 className="text-xs font-semibold text-gray-500 uppercase mb-3">Progresso do Pedido</h4>
                       <div className="flex items-center space-x-2 overflow-x-auto pb-2">
-                        {['RASCUNHO', 'AGUARDANDO_APROVACAO', 'APROVADO', 'ENVIADO_FORNECEDOR', 'CONFIRMADO', 'EM_TRANSITO', 'ENTREGUE'].map((step, index) => {
+                        {STATUS_FLOW.map((step, index) => {
                           const isActive = step === pedido.status;
-                          const isPast = ['RASCUNHO', 'AGUARDANDO_APROVACAO', 'APROVADO', 'ENVIADO_FORNECEDOR', 'CONFIRMADO', 'EM_TRANSITO', 'ENTREGUE'].indexOf(pedido.status) > index;
+                          const isPast = STATUS_FLOW.indexOf(pedido.status as PedidoStatus) > index;
                           const isCanceled = pedido.status === 'CANCELADO';
                           return (
                             <div key={step} className="flex items-center">
@@ -326,7 +304,7 @@ export default function Pedidos() {
                               `}>
                                 {isPast && !isActive ? <CheckIcon className="h-3 w-3" /> : index + 1}
                               </div>
-                              {index < 6 && (
+                              {index < STATUS_FLOW.length - 1 && (
                                 <div className={`w-8 h-0.5 ${isPast ? 'bg-green-500' : 'bg-gray-200'}`} />
                               )}
                             </div>
@@ -514,221 +492,186 @@ export default function Pedidos() {
         </div>
       </main>
 
-      {/* Modal Visualizar */}
-      {isViewModalOpen && selectedPedido && (
-        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+      {/* Modal Visualizar - Refatorado usando ViewModal */}
+      <ViewModal
+        isOpen={isViewModalOpen && !!selectedPedido}
+        title={selectedPedido?.numero || ''}
+        subtitle={selectedPedido ? statusLabels[selectedPedido.status] : undefined}
+        onClose={() => setIsViewModalOpen(false)}
+        size="3xl"
+      >
+        {selectedPedido && (
+          <div className="space-y-4">
+            <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${statusColors[selectedPedido.status]}`}>
+              {statusLabels[selectedPedido.status]}
+            </span>
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <h3 className="text-lg font-medium text-gray-900">{selectedPedido.numero}</h3>
-                <span className={`px-2 py-1 text-xs font-medium rounded-full ${statusColors[selectedPedido.status]}`}>
-                  {statusLabels[selectedPedido.status]}
-                </span>
+                <h4 className="text-sm font-medium text-gray-500">Fornecedor</h4>
+                <p className="text-gray-900">{selectedPedido.fornecedor_nome}</p>
+                <p className="text-sm text-gray-500">{selectedPedido.fornecedor_cnpj}</p>
               </div>
-              <button
-                onClick={() => setIsViewModalOpen(false)}
-                className="text-gray-400 hover:text-gray-500"
-              >
-                <XCircleIcon className="h-6 w-6" />
-              </button>
+              <div>
+                <h4 className="text-sm font-medium text-gray-500">Data do Pedido</h4>
+                <p className="text-gray-900">
+                  {new Date(selectedPedido.data_pedido).toLocaleDateString('pt-BR')}
+                </p>
+              </div>
+              {selectedPedido.condicoes_pagamento && (
+                <div>
+                  <h4 className="text-sm font-medium text-gray-500">Condicoes Pagamento</h4>
+                  <p className="text-gray-900">{selectedPedido.condicoes_pagamento}</p>
+                </div>
+              )}
+              {selectedPedido.prazo_entrega && (
+                <div>
+                  <h4 className="text-sm font-medium text-gray-500">Prazo Entrega</h4>
+                  <p className="text-gray-900">{selectedPedido.prazo_entrega} dias</p>
+                </div>
+              )}
             </div>
 
-            <div className="px-6 py-4 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <h4 className="text-sm font-medium text-gray-500">Fornecedor</h4>
-                  <p className="text-gray-900">{selectedPedido.fornecedor_nome}</p>
-                  <p className="text-sm text-gray-500">{selectedPedido.fornecedor_cnpj}</p>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-gray-500">Data do Pedido</h4>
-                  <p className="text-gray-900">
-                    {new Date(selectedPedido.data_pedido).toLocaleDateString('pt-BR')}
-                  </p>
-                </div>
-                {selectedPedido.condicoes_pagamento && (
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-500">Condicoes Pagamento</h4>
-                    <p className="text-gray-900">{selectedPedido.condicoes_pagamento}</p>
-                  </div>
-                )}
-                {selectedPedido.prazo_entrega && (
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-500">Prazo Entrega</h4>
-                    <p className="text-gray-900">{selectedPedido.prazo_entrega} dias</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t pt-4">
-                <h4 className="text-sm font-medium text-gray-700 mb-3">Itens do Pedido</h4>
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Produto</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Qtd</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Preco</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Total</th>
+            <div className="border-t pt-4">
+              <h4 className="text-sm font-medium text-gray-700 mb-3">Itens do Pedido</h4>
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Produto</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Qtd</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Preco</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {selectedPedido.itens?.map((item) => (
+                    <tr key={item.id}>
+                      <td className="px-3 py-2 text-sm">
+                        <span className="font-medium">{item.produto_codigo}</span> - {item.produto_nome}
+                      </td>
+                      <td className="px-3 py-2 text-sm text-right">{item.quantidade}</td>
+                      <td className="px-3 py-2 text-sm text-right">
+                        {item.preco_unitario?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
+                      <td className="px-3 py-2 text-sm text-right font-medium">
+                        {item.valor_total?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {selectedPedido.itens?.map((item) => (
-                      <tr key={item.id}>
-                        <td className="px-3 py-2 text-sm">
-                          <span className="font-medium">{item.produto_codigo}</span> - {item.produto_nome}
-                        </td>
-                        <td className="px-3 py-2 text-sm text-right">{item.quantidade}</td>
-                        <td className="px-3 py-2 text-sm text-right">
-                          {item.preco_unitario?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                        </td>
-                        <td className="px-3 py-2 text-sm text-right font-medium">
-                          {item.valor_total?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="bg-gray-50 p-4 rounded-lg grid grid-cols-3 gap-4">
-                <div>
-                  <p className="text-sm text-gray-500">Produtos</p>
-                  <p className="font-medium">
-                    {selectedPedido.valor_produtos?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Frete</p>
-                  <p className="font-medium">
-                    {selectedPedido.valor_frete?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Total</p>
-                  <p className="text-xl font-bold text-primary-600">
-                    {selectedPedido.valor_total?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                  </p>
-                </div>
-              </div>
-
-              {selectedPedido.observacoes && (
-                <div>
-                  <h4 className="text-sm font-medium text-gray-500">Observacoes</h4>
-                  <p className="text-gray-900">{selectedPedido.observacoes}</p>
-                </div>
-              )}
-
-              {selectedPedido.motivo_cancelamento && (
-                <div className="bg-red-50 p-4 rounded-lg">
-                  <h4 className="text-sm font-medium text-red-700">Motivo do Cancelamento</h4>
-                  <p className="text-red-900">{selectedPedido.motivo_cancelamento}</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Aprovar */}
-      {isAprovarModalOpen && selectedPedido && (
-        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900">
-                Aprovar Pedido {selectedPedido.numero}
-              </h3>
+                  ))}
+                </tbody>
+              </table>
             </div>
 
-            <div className="px-6 py-4 space-y-4">
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">
-                  <strong>Fornecedor:</strong> {selectedPedido.fornecedor_nome}
-                </p>
-                <p className="text-sm text-gray-600">
-                  <strong>Valor:</strong> {selectedPedido.valor_total?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            <div className="bg-gray-50 p-4 rounded-lg grid grid-cols-3 gap-4">
+              <div>
+                <p className="text-sm text-gray-500">Produtos</p>
+                <p className="font-medium">
+                  {selectedPedido.valor_produtos?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Justificativa da Aprovacao *
-                </label>
-                <textarea
-                  value={justificativa}
-                  onChange={(e) => setJustificativa(e.target.value)}
-                  rows={3}
-                  placeholder="Informe a justificativa (minimo 5 caracteres)"
-                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-                />
+                <p className="text-sm text-gray-500">Frete</p>
+                <p className="font-medium">
+                  {selectedPedido.valor_frete?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Total</p>
+                <p className="text-xl font-bold text-primary-600">
+                  {selectedPedido.valor_total?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </p>
               </div>
             </div>
 
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
-              <button
-                onClick={() => setIsAprovarModalOpen(false)}
-                className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleAprovar}
-                disabled={aprovarMutation.isPending || justificativa.length < 5}
-                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
-              >
-                {aprovarMutation.isPending ? 'Aprovando...' : 'Aprovar Pedido'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            {selectedPedido.observacoes && (
+              <div>
+                <h4 className="text-sm font-medium text-gray-500">Observacoes</h4>
+                <p className="text-gray-900">{selectedPedido.observacoes}</p>
+              </div>
+            )}
 
-      {/* Modal Cancelar */}
-      {isCancelarModalOpen && selectedPedido && (
-        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-red-900">
-                Cancelar Pedido {selectedPedido.numero}
-              </h3>
-            </div>
-
-            <div className="px-6 py-4 space-y-4">
+            {selectedPedido.motivo_cancelamento && (
               <div className="bg-red-50 p-4 rounded-lg">
-                <p className="text-sm text-red-800">
-                  Esta acao nao pode ser desfeita. O pedido sera marcado como cancelado.
-                </p>
+                <h4 className="text-sm font-medium text-red-700">Motivo do Cancelamento</h4>
+                <p className="text-red-900">{selectedPedido.motivo_cancelamento}</p>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Motivo do Cancelamento *
-                </label>
-                <textarea
-                  value={motivoCancelamento}
-                  onChange={(e) => setMotivoCancelamento(e.target.value)}
-                  rows={3}
-                  placeholder="Informe o motivo do cancelamento (minimo 10 caracteres)"
-                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-                />
-              </div>
-            </div>
+            )}
+          </div>
+        )}
+      </ViewModal>
 
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
-              <button
-                onClick={() => setIsCancelarModalOpen(false)}
-                className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Voltar
-              </button>
-              <button
-                onClick={handleCancelar}
-                disabled={cancelarMutation.isPending || motivoCancelamento.length < 10}
-                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
-              >
-                {cancelarMutation.isPending ? 'Cancelando...' : 'Confirmar Cancelamento'}
-              </button>
+      {/* Modal Aprovar - Refatorado usando Modal */}
+      <Modal
+        isOpen={isAprovarModalOpen && !!selectedPedido}
+        title={`Aprovar Pedido ${selectedPedido?.numero || ''}`}
+        onClose={() => setIsAprovarModalOpen(false)}
+        onSubmit={handleAprovar}
+        submitLabel="Aprovar Pedido"
+        submitDisabled={justificativa.length < 5}
+        submitLoading={aprovarMutation.isPending}
+        submitColor="green"
+        size="lg"
+      >
+        {selectedPedido && (
+          <div className="space-y-4">
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <p className="text-sm text-gray-600">
+                <strong>Fornecedor:</strong> {selectedPedido.fornecedor_nome}
+              </p>
+              <p className="text-sm text-gray-600">
+                <strong>Valor:</strong> {selectedPedido.valor_total?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Justificativa da Aprovacao *
+              </label>
+              <textarea
+                value={justificativa}
+                onChange={(e) => setJustificativa(e.target.value)}
+                rows={3}
+                placeholder="Informe a justificativa (minimo 5 caracteres)"
+                className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+              />
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
+
+      {/* Modal Cancelar - Refatorado usando Modal */}
+      <Modal
+        isOpen={isCancelarModalOpen && !!selectedPedido}
+        title={`Cancelar Pedido ${selectedPedido?.numero || ''}`}
+        onClose={() => setIsCancelarModalOpen(false)}
+        onSubmit={handleCancelar}
+        submitLabel="Confirmar Cancelamento"
+        cancelLabel="Voltar"
+        submitDisabled={motivoCancelamento.length < 10}
+        submitLoading={cancelarMutation.isPending}
+        submitColor="red"
+        size="lg"
+      >
+        {selectedPedido && (
+          <div className="space-y-4">
+            <div className="bg-red-50 p-4 rounded-lg">
+              <p className="text-sm text-red-800">
+                Esta acao nao pode ser desfeita. O pedido sera marcado como cancelado.
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Motivo do Cancelamento *
+              </label>
+              <textarea
+                value={motivoCancelamento}
+                onChange={(e) => setMotivoCancelamento(e.target.value)}
+                rows={3}
+                placeholder="Informe o motivo do cancelamento (minimo 10 caracteres)"
+                className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+              />
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
