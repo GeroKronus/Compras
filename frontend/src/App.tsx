@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import Login from '@/pages/auth/Login';
 import Dashboard from '@/pages/Dashboard';
 import MasterDashboard from '@/pages/MasterDashboard';
+import AdminDashboard from '@/pages/AdminDashboard';
 import { Categorias } from '@/pages/Categorias';
 import { Produtos } from '@/pages/Produtos';
 import { Fornecedores } from '@/pages/Fornecedores';
@@ -61,12 +62,17 @@ function SmartDashboard() {
     );
   }
 
-  // Se for MASTER, mostra o dashboard de administracao
+  // Se for MASTER, mostra o dashboard de administracao de tenants
   if (user?.tipo === 'MASTER') {
     return <MasterDashboard />;
   }
 
-  // Caso contrario, mostra o dashboard normal de compras
+  // Se for ADMIN, mostra o dashboard de administracao da empresa
+  if (user?.tipo === 'ADMIN') {
+    return <AdminDashboard />;
+  }
+
+  // Caso contrario (COMPRADOR, GERENTE, etc), mostra o dashboard normal de compras
   return <Dashboard />;
 }
 
