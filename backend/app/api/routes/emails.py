@@ -457,12 +457,9 @@ class TesteEmailRequest(BaseModel):
 
 
 @router.get("/config/status")
-def verificar_config_email(
-    current_user: Usuario = Depends(get_current_user)
-):
+def verificar_config_email():
     """
     Verificar se o servico de email esta configurado.
-    Retorna status das variaveis de ambiente necessarias.
     """
     return {
         "configurado": email_service.is_configured,
@@ -470,57 +467,38 @@ def verificar_config_email(
         "smtp_port": settings.SMTP_PORT,
         "smtp_user_configurado": bool(settings.SMTP_USER),
         "smtp_password_configurado": bool(settings.SMTP_PASSWORD),
-        "email_from": settings.EMAIL_FROM or "(usa SMTP_USER)",
-        "imap_host": settings.IMAP_HOST,
-        "imap_port": settings.IMAP_PORT
+        "email_from": settings.EMAIL_FROM or "(usa SMTP_USER)"
     }
 
 
-@router.get("/teste/enviar/{email_destino}")
-def enviar_email_teste_get(
-    email_destino: str,
-    current_user: Usuario = Depends(get_current_user)
+@router.get("/teste/{email_destino}")
+def enviar_email_teste_publico(
+    email_destino: str
 ):
     """
-    Enviar email de teste via GET (para teste rapido no navegador).
-
-    Exemplo: /api/v1/emails/teste/enviar/seu@email.com
+    Enviar email de teste (publico, sem autenticacao).
+    Exemplo: /api/v1/emails/teste/seu@email.com
     """
     if not email_service.is_configured:
         raise HTTPException(
             status_code=503,
-            detail="Servico de email nao configurado. Configure SMTP_USER e SMTP_PASSWORD."
+            detail="Email nao configurado. Configure SMTP_USER e SMTP_PASSWORD no Railway."
         )
 
-    corpo_html = f"""
+    corpo_html = """
 <!DOCTYPE html>
 <html>
-<head>
-    <meta charset="utf-8">
-    <style>
-        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-        .header {{ background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
-        .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
-        .success {{ background: #10b981; color: white; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0; }}
-        .footer {{ text-align: center; margin-top: 20px; color: #666; font-size: 12px; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1 style="margin: 0;">Sistema de Compras</h1>
-            <p style="margin: 10px 0 0 0;">Teste de Email</p>
+<head><meta charset="utf-8"></head>
+<body style="font-family: Arial, sans-serif; padding: 20px;">
+    <div style="max-width: 500px; margin: 0 auto; background: #f9f9f9; border-radius: 10px; overflow: hidden;">
+        <div style="background: #3b82f6; color: white; padding: 20px; text-align: center;">
+            <h2 style="margin: 0;">Sistema de Compras</h2>
         </div>
-        <div class="content">
-            <div class="success">
-                ✅ Email enviado com sucesso!
+        <div style="padding: 20px;">
+            <div style="background: #10b981; color: white; padding: 15px; border-radius: 8px; text-align: center;">
+                ✅ Email funcionando!
             </div>
-            <p>Este e um email de teste do Sistema de Gestao de Compras.</p>
-            <p><strong>Enviado por:</strong> {current_user.nome_completo} ({current_user.email})</p>
-        </div>
-        <div class="footer">
-            <p>Se voce recebeu este email, a configuracao SMTP esta funcionando corretamente.</p>
+            <p style="margin-top: 20px;">Configuracao SMTP OK.</p>
         </div>
     </div>
 </body>
@@ -529,23 +507,15 @@ def enviar_email_teste_get(
 
     sucesso = email_service.enviar_email(
         destinatario=email_destino,
-        assunto="Teste de Email - Sistema de Compras",
+        assunto="Teste - Sistema de Compras",
         corpo_html=corpo_html,
-        corpo_texto=f"Teste de Email - Sistema de Compras\n\nEnviado por: {current_user.nome_completo}"
+        corpo_texto="Teste de Email - Sistema de Compras - Configuracao SMTP OK!"
     )
 
     if sucesso:
-        return {
-            "sucesso": True,
-            "mensagem": f"Email de teste enviado para {email_destino}",
-            "de": settings.EMAIL_FROM or settings.SMTP_USER,
-            "para": email_destino
-        }
+        return {"sucesso": True, "para": email_destino}
     else:
-        raise HTTPException(
-            status_code=500,
-            detail="Falha ao enviar email. Verifique as credenciais SMTP."
-        )
+        raise HTTPException(status_code=500, detail="Falha ao enviar. Verifique credenciais SMTP.")
 
 
 @router.post("/teste/enviar")
