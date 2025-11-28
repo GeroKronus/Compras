@@ -482,6 +482,7 @@ def enviar_email_teste_publico(
     import smtplib
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
+    from datetime import datetime
 
     if not email_service.is_configured:
         raise HTTPException(
@@ -489,30 +490,74 @@ def enviar_email_teste_publico(
             detail="Email nao configurado. Configure SMTP_USER e SMTP_PASSWORD no Railway."
         )
 
+    debug_info = {
+        "host": settings.SMTP_HOST,
+        "port": settings.SMTP_PORT,
+        "user": settings.SMTP_USER,
+        "email_from": settings.EMAIL_FROM or settings.SMTP_USER,
+        "destino": email_destino,
+        "timestamp": datetime.now().isoformat()
+    }
+
     try:
         # Teste direto de conexao SMTP
         msg = MIMEMultipart('alternative')
-        msg['From'] = settings.EMAIL_FROM or settings.SMTP_USER
+        remetente = settings.EMAIL_FROM or settings.SMTP_USER
+        msg['From'] = remetente
         msg['To'] = email_destino
-        msg['Subject'] = "Teste - Sistema de Compras"
+        msg['Subject'] = f"Teste - Sistema de Compras - {datetime.now().strftime('%H:%M:%S')}"
 
-        corpo = "<h1>Email funcionando!</h1><p>Teste OK.</p>"
+        corpo = f"""
+        <html>
+        <body>
+            <h1>Email funcionando!</h1>
+            <p>Teste OK - {datetime.now().isoformat()}</p>
+            <p>De: {remetente}</p>
+            <p>Para: {email_destino}</p>
+            <p>Host: {settings.SMTP_HOST}:{settings.SMTP_PORT}</p>
+        </body>
+        </html>
+        """
         msg.attach(MIMEText(corpo, 'html', 'utf-8'))
 
         # Conectar SSL
+        debug_info["etapa"] = "conectando"
         server = smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, timeout=30)
+
+        debug_info["etapa"] = "login"
         server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-        server.sendmail(settings.SMTP_USER, email_destino, msg.as_string())
+
+        debug_info["etapa"] = "enviando"
+        result = server.sendmail(settings.SMTP_USER, email_destino, msg.as_string())
+        debug_info["sendmail_result"] = str(result) if result else "OK (vazio = sucesso)"
+
+        debug_info["etapa"] = "quit"
         server.quit()
 
-        return {"sucesso": True, "para": email_destino, "de": settings.SMTP_USER}
+        return {
+            "sucesso": True,
+            "para": email_destino,
+            "de": remetente,
+            "debug": debug_info
+        }
 
     except smtplib.SMTPAuthenticationError as e:
-        raise HTTPException(status_code=401, detail=f"Erro autenticacao: {e.smtp_code} - {e.smtp_error}")
+        debug_info["erro_tipo"] = "SMTPAuthenticationError"
+        debug_info["smtp_code"] = e.smtp_code
+        debug_info["smtp_error"] = str(e.smtp_error)
+        raise HTTPException(status_code=401, detail={"msg": "Erro autenticacao", "debug": debug_info})
+    except smtplib.SMTPRecipientsRefused as e:
+        debug_info["erro_tipo"] = "SMTPRecipientsRefused"
+        debug_info["recipients"] = str(e.recipients)
+        raise HTTPException(status_code=400, detail={"msg": "Destinatario recusado", "debug": debug_info})
     except smtplib.SMTPException as e:
-        raise HTTPException(status_code=500, detail=f"Erro SMTP: {type(e).__name__} - {str(e)}")
+        debug_info["erro_tipo"] = type(e).__name__
+        debug_info["erro_msg"] = str(e)
+        raise HTTPException(status_code=500, detail={"msg": "Erro SMTP", "debug": debug_info})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro: {type(e).__name__} - {str(e)}")
+        debug_info["erro_tipo"] = type(e).__name__
+        debug_info["erro_msg"] = str(e)
+        raise HTTPException(status_code=500, detail={"msg": "Erro geral", "debug": debug_info})
 
 
 @router.post("/teste/enviar")
