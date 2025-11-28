@@ -13,6 +13,8 @@ from app.models.cotacao import SolicitacaoCotacao
 from app.models.fornecedor import Fornecedor
 from app.models.usuario import Usuario
 from app.services.email_classifier import email_classifier
+from app.services.email_service import email_service
+from app.config import settings
 
 router = APIRouter()
 
@@ -444,6 +446,114 @@ def status_job_emails(
     from app.jobs.email_job import status_scheduler
 
     return status_scheduler()
+
+
+# ============ TESTE DE EMAIL ============
+
+class TesteEmailRequest(BaseModel):
+    destinatario: str
+    assunto: Optional[str] = "Teste de Email - Sistema de Compras"
+    mensagem: Optional[str] = "Este e um email de teste do Sistema de Gestao de Compras."
+
+
+@router.get("/config/status")
+def verificar_config_email(
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    Verificar se o servico de email esta configurado.
+    Retorna status das variaveis de ambiente necessarias.
+    """
+    return {
+        "configurado": email_service.is_configured,
+        "smtp_host": settings.SMTP_HOST,
+        "smtp_port": settings.SMTP_PORT,
+        "smtp_user_configurado": bool(settings.SMTP_USER),
+        "smtp_password_configurado": bool(settings.SMTP_PASSWORD),
+        "email_from": settings.EMAIL_FROM or "(usa SMTP_USER)",
+        "imap_host": settings.IMAP_HOST,
+        "imap_port": settings.IMAP_PORT
+    }
+
+
+@router.post("/teste/enviar")
+def enviar_email_teste(
+    dados: TesteEmailRequest,
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    Enviar email de teste para verificar configuracao SMTP.
+
+    Apenas usuarios autenticados podem usar este endpoint.
+    Envia um email simples para o destinatario informado.
+    """
+    if not email_service.is_configured:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "Servico de email nao configurado",
+                "smtp_user_configurado": bool(settings.SMTP_USER),
+                "smtp_password_configurado": bool(settings.SMTP_PASSWORD)
+            }
+        )
+
+    corpo_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+        .header {{ background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
+        .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
+        .success {{ background: #10b981; color: white; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0; }}
+        .footer {{ text-align: center; margin-top: 20px; color: #666; font-size: 12px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 style="margin: 0;">Sistema de Compras</h1>
+            <p style="margin: 10px 0 0 0;">Teste de Email</p>
+        </div>
+        <div class="content">
+            <div class="success">
+                ✅ Email enviado com sucesso!
+            </div>
+            <p><strong>Mensagem:</strong></p>
+            <p>{dados.mensagem}</p>
+            <p><strong>Enviado por:</strong> {current_user.nome_completo} ({current_user.email})</p>
+        </div>
+        <div class="footer">
+            <p>Este e um email de teste do Sistema de Gestao de Compras</p>
+            <p>Se voce recebeu este email, a configuracao SMTP esta funcionando corretamente.</p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+    sucesso = email_service.enviar_email(
+        destinatario=dados.destinatario,
+        assunto=dados.assunto,
+        corpo_html=corpo_html,
+        corpo_texto=f"{dados.assunto}\n\n{dados.mensagem}\n\nEnviado por: {current_user.nome_completo}"
+    )
+
+    if sucesso:
+        return {
+            "sucesso": True,
+            "mensagem": f"Email de teste enviado para {dados.destinatario}",
+            "de": settings.EMAIL_FROM or settings.SMTP_USER,
+            "para": dados.destinatario,
+            "assunto": dados.assunto
+        }
+    else:
+        raise HTTPException(
+            status_code=500,
+            detail="Falha ao enviar email. Verifique as credenciais SMTP."
+        )
 
 
 # ============ HELPERS ============
