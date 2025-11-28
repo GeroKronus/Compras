@@ -47,6 +47,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
         # Rotas públicas passam direto
         # Inclui arquivos estáticos (assets, imagens, etc)
+        # E rotas do frontend SPA (tudo que não começa com /api/)
         if (path in self.PUBLIC_PATHS or
             path.startswith("/static") or
             path.startswith("/assets") or
@@ -57,7 +58,9 @@ class TenantMiddleware(BaseHTTPMiddleware):
             path.endswith(".png") or
             path.endswith(".jpg") or
             path.endswith(".woff") or
-            path.endswith(".woff2")):
+            path.endswith(".woff2") or
+            path.endswith(".html") or
+            not path.startswith("/api/")):  # Rotas SPA do frontend
             clear_current_tenant_id()
             return await call_next(request)
 
