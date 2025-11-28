@@ -216,7 +216,8 @@ def enviar_solicitacao(
                 itens=itens_email,
                 observacoes=solicitacao.observacoes,
                 solicitacao_id=solicitacao.id,
-                data_limite=data_limite_str
+                data_limite=data_limite_str,
+                fornecedor_cnpj=fornecedor.cnpj
             )
             if sucesso:
                 emails_enviados.append(fornecedor.razao_social or fornecedor.nome_fantasia)

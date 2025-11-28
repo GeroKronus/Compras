@@ -8,8 +8,11 @@ import imaplib
 import email
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email.mime.application import MIMEApplication
 from email.header import decode_header
-from typing import Optional, List
+from email import encoders
+from typing import Optional, List, Tuple
 from datetime import datetime, timedelta
 import re
 from app.config import settings
@@ -41,7 +44,8 @@ class EmailService:
         destinatario: str,
         assunto: str,
         corpo_html: str,
-        corpo_texto: Optional[str] = None
+        corpo_texto: Optional[str] = None,
+        anexos: Optional[List[Tuple[str, bytes]]] = None
     ) -> bool:
         """
         Envia email via SMTP
@@ -51,6 +55,7 @@ class EmailService:
             assunto: Assunto do email
             corpo_html: Corpo do email em HTML
             corpo_texto: Corpo em texto puro (opcional)
+            anexos: Lista de tuplas (nome_arquivo, bytes_conteudo)
 
         Returns:
             True se enviado com sucesso
@@ -67,16 +72,36 @@ class EmailService:
             return False
 
         try:
-            # Criar mensagem
-            msg = MIMEMultipart('alternative')
+            # Criar mensagem mista (para suportar anexos)
+            msg = MIMEMultipart('mixed')
             msg['From'] = email_from
             msg['To'] = destinatario
             msg['Subject'] = assunto
 
-            # Adicionar corpo texto e HTML
+            # Parte do corpo (alternativa: texto/html)
+            corpo_part = MIMEMultipart('alternative')
             if corpo_texto:
-                msg.attach(MIMEText(corpo_texto, 'plain', 'utf-8'))
-            msg.attach(MIMEText(corpo_html, 'html', 'utf-8'))
+                corpo_part.attach(MIMEText(corpo_texto, 'plain', 'utf-8'))
+            corpo_part.attach(MIMEText(corpo_html, 'html', 'utf-8'))
+            msg.attach(corpo_part)
+
+            # Adicionar anexos
+            if anexos:
+                for nome_arquivo, conteudo in anexos:
+                    if nome_arquivo.lower().endswith('.pdf'):
+                        anexo = MIMEApplication(conteudo, _subtype='pdf')
+                    else:
+                        anexo = MIMEBase('application', 'octet-stream')
+                        anexo.set_payload(conteudo)
+                        encoders.encode_base64(anexo)
+
+                    anexo.add_header(
+                        'Content-Disposition',
+                        'attachment',
+                        filename=nome_arquivo
+                    )
+                    msg.attach(anexo)
+                    print(f"[EMAIL] Anexo adicionado: {nome_arquivo}")
 
             # Conectar e enviar via SSL (porta 465)
             print(f"[EMAIL] Conectando a {smtp_host}:{smtp_port}...")
@@ -284,10 +309,12 @@ Referência: COTACAO-{solicitacao_id}
         observacoes: Optional[str] = None,
         solicitacao_id: int = 0,
         data_limite: Optional[str] = None,
-        prazo_resposta_dias: int = 5
+        prazo_resposta_dias: int = 5,
+        fornecedor_cnpj: Optional[str] = None
     ) -> bool:
         """
         Envia email de solicitação de cotação com múltiplos itens para fornecedor
+        Inclui PDF preenchível em anexo
 
         Args:
             fornecedor_email: Email do fornecedor
@@ -299,6 +326,7 @@ Referência: COTACAO-{solicitacao_id}
             solicitacao_id: ID da solicitação (para rastreamento)
             data_limite: Data limite para resposta
             prazo_resposta_dias: Prazo para resposta em dias (usado se data_limite não informada)
+            fornecedor_cnpj: CNPJ do fornecedor
 
         Returns:
             True se enviado com sucesso
@@ -310,12 +338,9 @@ Referência: COTACAO-{solicitacao_id}
 
         assunto = f"[COTAÇÃO {solicitacao_numero}] {solicitacao_titulo}"
 
-        # Criar HTML dos itens (tabela de visualização)
+        # Criar HTML dos itens (tabela de visualização apenas)
         itens_html = ""
-        # Criar HTML da tabela de preenchimento (para o fornecedor preencher)
-        itens_preenchimento_html = ""
         itens_texto = ""
-        itens_preenchimento_texto = ""
 
         for i, item in enumerate(itens, 1):
             especificacoes_html = f"<br><small style='color: #666;'>Obs: {item.get('especificacoes', '')}</small>" if item.get('especificacoes') else ""
@@ -327,21 +352,12 @@ Referência: COTACAO-{solicitacao_id}
                 <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center;">{item.get('unidade_medida', 'UN')}</td>
             </tr>
             """
-            # Tabela de preenchimento - o fornecedor preenche os campos ___
-            itens_preenchimento_html += f"""
-            <tr>
-                <td style="padding: 10px; border: 1px solid #ddd;">{item.get('produto_nome', 'N/A')}</td>
-                <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{item.get('quantidade', 0)}</td>
-                <td style="padding: 10px; border: 1px solid #ddd; text-align: center; background: #fffef0;">R$ _______</td>
-                <td style="padding: 10px; border: 1px solid #ddd; text-align: center; background: #fffef0;">R$ _______</td>
-            </tr>
-            """
             especificacoes_texto = f" ({item.get('especificacoes', '')})" if item.get('especificacoes') else ""
             itens_texto += f"  {i}. {item.get('produto_nome', 'N/A')} - {item.get('quantidade', 0)} {item.get('unidade_medida', 'UN')}{especificacoes_texto}\n"
-            itens_preenchimento_texto += f"  {item.get('produto_nome', 'N/A')} | Qtd: {item.get('quantidade', 0)} | Preco Unit: R$ _____ | Total: R$ _____\n"
 
         obs_html = f"<p><strong>Observações:</strong> {observacoes}</p>" if observacoes else ""
 
+        # Email simplificado - formulário está no PDF
         corpo_html = f"""
 <!DOCTYPE html>
 <html>
@@ -353,6 +369,7 @@ Referência: COTACAO-{solicitacao_id}
         .header {{ background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
         .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
         .footer {{ text-align: center; margin-top: 20px; color: #666; font-size: 12px; }}
+        .destaque {{ background: #e8f5e9; border: 2px solid #10b981; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: center; }}
         .importante {{ background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; }}
         table {{ width: 100%; border-collapse: collapse; margin: 20px 0; background: white; }}
         th {{ background: #3b82f6; color: white; padding: 12px; text-align: left; }}
@@ -387,40 +404,18 @@ Referência: COTACAO-{solicitacao_id}
 
             {obs_html}
 
-            <div style="background: #e8f5e9; border: 2px solid #4caf50; border-radius: 8px; padding: 20px; margin: 25px 0;">
-                <h3 style="color: #2e7d32; margin-top: 0;">📝 PREENCHA SUA PROPOSTA ABAIXO</h3>
-                <p style="color: #555; margin-bottom: 15px;">Ao responder, preencha os campos em amarelo com seus valores:</p>
-
-                <table style="width: 100%; border-collapse: collapse; background: white;">
-                    <thead>
-                        <tr style="background: #4caf50; color: white;">
-                            <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Produto</th>
-                            <th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 60px;">Qtd</th>
-                            <th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 100px;">Preco Unit.</th>
-                            <th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 100px;">Total</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {itens_preenchimento_html}
-                    </tbody>
-                </table>
-
-                <div style="margin-top: 15px; padding: 15px; background: #fffef0; border-radius: 5px;">
-                    <p style="margin: 5px 0;"><strong>Prazo de Entrega:</strong> _______ dias</p>
-                    <p style="margin: 5px 0;"><strong>Condicoes de Pagamento:</strong> _______________________</p>
-                    <p style="margin: 5px 0;"><strong>Frete:</strong> ( ) Incluso ( ) Por conta do comprador - Valor: R$ _______</p>
-                    <p style="margin: 5px 0;"><strong>Validade da Proposta:</strong> _______ dias</p>
-                    <p style="margin: 5px 0;"><strong>Observacoes:</strong> _______________________</p>
-                </div>
+            <div class="destaque">
+                <h3 style="color: #059669; margin: 0 0 10px 0;">📎 PDF EM ANEXO</h3>
+                <p style="margin: 0;">Abra o <strong>PDF anexo</strong>, preencha os campos e responda este email com o arquivo preenchido.</p>
             </div>
 
             <div class="importante">
-                <strong>⚠️ IMPORTANTE:</strong>
+                <strong>⚠️ COMO RESPONDER:</strong>
                 <ul style="margin: 10px 0 0 0;">
-                    <li>Preencha a tabela acima ao responder este email</li>
-                    <li>Voce tambem pode anexar um PDF ou responder em formato livre</li>
+                    <li>Abra o PDF anexo no seu computador</li>
+                    <li>Preencha os campos de preço, prazo e condições</li>
+                    <li>Salve o PDF e anexe na resposta deste email</li>
                     <li>Prazo para resposta: <strong>{prazo}</strong></li>
-                    <li>Mantenha o assunto do email para rastreamento</li>
                 </ul>
             </div>
 
@@ -449,23 +444,13 @@ Gostaríamos de solicitar cotação para os seguintes itens:
 {f'OBSERVAÇÕES: {observacoes}' if observacoes else ''}
 
 ============================================
-   PREENCHA SUA PROPOSTA ABAIXO
+   PDF EM ANEXO
 ============================================
 
-{itens_preenchimento_texto}
-Prazo de Entrega: _______ dias
-Condicoes de Pagamento: _______________________
-Frete: ( ) Incluso ( ) Por conta do comprador - Valor: R$ _______
-Validade da Proposta: _______ dias
-Observacoes: _______________________
+Abra o PDF anexo, preencha os campos de preço, prazo e condições,
+salve e responda este email com o arquivo preenchido.
 
-============================================
-
-IMPORTANTE:
-- Preencha os campos acima ao responder este email
-- Voce tambem pode anexar um PDF ou responder em formato livre
-- Prazo para resposta: {prazo}
-- Mantenha o assunto do email para rastreamento
+Prazo para resposta: {prazo}
 
 Atenciosamente,
 Departamento de Compras
@@ -473,11 +458,36 @@ Departamento de Compras
 Referência: {solicitacao_numero} | ID: {solicitacao_id}
 """
 
+        # Gerar PDF com formulário preenchível
+        anexos = []
+        try:
+            from app.services.pdf_service import pdf_service
+
+            pdf_bytes = pdf_service.gerar_pdf_cotacao(
+                fornecedor_nome=fornecedor_nome,
+                fornecedor_cnpj=fornecedor_cnpj,
+                solicitacao_numero=solicitacao_numero,
+                solicitacao_titulo=solicitacao_titulo,
+                itens=itens,
+                observacoes=observacoes,
+                data_limite=prazo,
+                solicitacao_id=solicitacao_id
+            )
+
+            nome_pdf = f"Cotacao_{solicitacao_numero.replace(' ', '_').replace('/', '-')}.pdf"
+            anexos.append((nome_pdf, pdf_bytes))
+            print(f"[EMAIL] PDF gerado: {nome_pdf} ({len(pdf_bytes)} bytes)")
+
+        except Exception as e:
+            print(f"[EMAIL] ERRO ao gerar PDF: {e}")
+            # Continua sem o PDF
+
         return self.enviar_email(
             destinatario=fornecedor_email,
             assunto=assunto,
             corpo_html=corpo_html,
-            corpo_texto=corpo_texto
+            corpo_texto=corpo_texto,
+            anexos=anexos if anexos else None
         )
 
     def ler_emails_cotacao(
