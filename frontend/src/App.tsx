@@ -62,7 +62,7 @@ function SmartDashboard() {
   }
 
   // Se for MASTER, mostra o dashboard de administracao
-  if (user?.tipo === 'master') {
+  if (user?.tipo === 'MASTER') {
     return <MasterDashboard />;
   }
 

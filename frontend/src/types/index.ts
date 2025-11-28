@@ -5,7 +5,7 @@ export interface Usuario {
   tenant_id: number;
   nome_completo: string;
   email: string;
-  tipo: 'master' | 'admin' | 'gerente' | 'comprador' | 'almoxarife' | 'visualizador';
+  tipo: 'MASTER' | 'ADMIN' | 'GERENTE' | 'COMPRADOR' | 'ALMOXARIFE' | 'VISUALIZADOR';
   ativo: boolean;
   telefone?: string;
   setor?: string;
