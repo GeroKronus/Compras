@@ -8,12 +8,6 @@ from pydantic import BaseModel, EmailStr
 from app.database import get_db, engine, Base
 from app.models.tenant import Tenant
 from app.models.usuario import Usuario, TipoUsuario
-from app.models.cotacao import (
-    SolicitacaoCotacao, PropostaFornecedor, ItemProposta, ItemSolicitacao,
-    StatusSolicitacao, StatusProposta
-)
-from app.models.fornecedor import Fornecedor
-from app.models.produto import Produto
 # Importar todos os models para registrar no metadata
 from app.models import (
     tenant, usuario, categoria, produto, fornecedor,
