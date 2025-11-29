@@ -27,7 +27,7 @@ router = APIRouter()
 @router.get("/version")
 def get_version():
     """Retorna versão do backend"""
-    return {"version": "1.0039", "endpoint": "setup/version"}
+    return {"version": "1.0040", "endpoint": "setup/version"}
 
 
 class SetupRequest(BaseModel):
@@ -586,3 +586,176 @@ def corrigir_tenant_ids(db: Session = Depends(get_db)):
         db.rollback()
         import traceback
         return {"erro": str(e), "tipo": type(e).__name__, "traceback": traceback.format_exc()}
+
+
+@router.post("/reprocessar-proposta/{proposta_id}")
+def reprocessar_proposta(proposta_id: int):
+    """
+    Reprocessa uma proposta específica buscando o email original.
+    Extrai novamente os valores do PDF com suporte a AcroForm.
+    SEM AUTENTICAÇÃO - apenas para correção de dados.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.models.cotacao import PropostaFornecedor, ItemProposta
+        from app.models.email_processado import EmailProcessado
+        from app.services.email_classifier import EmailClassifier
+        from app.config import settings
+        from decimal import Decimal
+
+        db = SessionLocal()
+        try:
+            # Buscar proposta
+            proposta = db.query(PropostaFornecedor).filter(
+                PropostaFornecedor.id == proposta_id
+            ).first()
+
+            if not proposta:
+                return {"erro": f"Proposta {proposta_id} não encontrada"}
+
+            # Buscar email processado relacionado
+            email_proc = db.query(EmailProcessado).filter(
+                EmailProcessado.proposta_id == proposta_id
+            ).first()
+
+            if not email_proc:
+                return {
+                    "erro": "Email processado não encontrado para esta proposta",
+                    "sugestao": "Use o endpoint /setup/limpar-propostas/{solicitacao_id} para limpar e reprocessar via IMAP"
+                }
+
+            return {
+                "proposta_id": proposta_id,
+                "email_id": email_proc.id,
+                "status": "Reprocessamento via email não implementado ainda. Use limpar-propostas.",
+                "proposta_valor_atual": float(proposta.valor_total) if proposta.valor_total else None
+            }
+
+        finally:
+            db.close()
+    except Exception as e:
+        import traceback
+        return {"erro": str(e), "traceback": traceback.format_exc()}
+
+
+@router.post("/limpar-propostas/{solicitacao_id}")
+def limpar_propostas_solicitacao(solicitacao_id: int):
+    """
+    Limpa todas as propostas de uma solicitação para permitir reprocessamento.
+    Remove propostas e itens_proposta, e reseta status dos emails.
+    SEM AUTENTICAÇÃO - apenas para correção de dados.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.models.cotacao import SolicitacaoCotacao, PropostaFornecedor, ItemProposta
+        from app.models.email_processado import EmailProcessado
+        from sqlalchemy import text
+
+        db = SessionLocal()
+        try:
+            # Verificar se solicitação existe
+            solicitacao = db.query(SolicitacaoCotacao).filter(
+                SolicitacaoCotacao.id == solicitacao_id
+            ).first()
+
+            if not solicitacao:
+                return {"erro": f"Solicitação {solicitacao_id} não encontrada"}
+
+            # Buscar propostas
+            propostas = db.query(PropostaFornecedor).filter(
+                PropostaFornecedor.solicitacao_id == solicitacao_id
+            ).all()
+
+            deletados = {
+                "itens_proposta": 0,
+                "propostas": 0,
+                "emails_resetados": 0
+            }
+
+            proposta_ids = [p.id for p in propostas]
+
+            if proposta_ids:
+                # Deletar itens das propostas
+                itens_deleted = db.query(ItemProposta).filter(
+                    ItemProposta.proposta_id.in_(proposta_ids)
+                ).delete(synchronize_session=False)
+                deletados["itens_proposta"] = itens_deleted
+
+                # Resetar emails processados relacionados
+                emails_reset = db.query(EmailProcessado).filter(
+                    EmailProcessado.proposta_id.in_(proposta_ids)
+                ).update(
+                    {"status": "pendente", "proposta_id": None},
+                    synchronize_session=False
+                )
+                deletados["emails_resetados"] = emails_reset
+
+                # Deletar propostas
+                props_deleted = db.query(PropostaFornecedor).filter(
+                    PropostaFornecedor.id.in_(proposta_ids)
+                ).delete(synchronize_session=False)
+                deletados["propostas"] = props_deleted
+
+            db.commit()
+
+            return {
+                "sucesso": True,
+                "solicitacao_id": solicitacao_id,
+                "solicitacao_numero": solicitacao.numero,
+                "deletados": deletados,
+                "proximos_passos": [
+                    "1. Aguarde o job de emails reprocessar (ou use /emails/processar)",
+                    "2. Verifique os novos valores no /setup/diagnostico"
+                ]
+            }
+
+        finally:
+            db.close()
+    except Exception as e:
+        import traceback
+        return {"erro": str(e), "traceback": traceback.format_exc()}
+
+
+@router.post("/forcar-reprocessamento-email/{email_id}")
+def forcar_reprocessamento_email(email_id: int):
+    """
+    Força o reprocessamento de um email específico.
+    Marca o email como 'pendente' para ser processado novamente.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.models.email_processado import EmailProcessado
+
+        db = SessionLocal()
+        try:
+            email_proc = db.query(EmailProcessado).filter(
+                EmailProcessado.id == email_id
+            ).first()
+
+            if not email_proc:
+                return {"erro": f"Email {email_id} não encontrado"}
+
+            # Se tiver proposta associada, desassociar
+            proposta_id_anterior = email_proc.proposta_id
+            email_proc.proposta_id = None
+            email_proc.status = "pendente"
+
+            db.commit()
+
+            return {
+                "sucesso": True,
+                "email_id": email_id,
+                "assunto": email_proc.assunto,
+                "proposta_id_anterior": proposta_id_anterior,
+                "novo_status": "pendente",
+                "proximos_passos": [
+                    "O email será reprocessado no próximo ciclo do job",
+                    "Ou use POST /api/v1/emails/processar para processar agora"
+                ]
+            }
+
+        finally:
+            db.close()
+    except Exception as e:
+        import traceback
+        return {"erro": str(e), "traceback": traceback.format_exc()}
