@@ -831,15 +831,15 @@ Responda APENAS com JSON no formato:
             elif preco_unitario and dados_extraidos.get('quantidade'):
                 proposta.valor_total = preco_unitario * dados_extraidos['quantidade']
 
-            # Criar ItemProposta se tiver preco unitario
+            # Criar ItemProposta para TODOS os itens da solicitacao
             if preco_unitario:
-                # Buscar primeiro item da solicitacao
-                item_solicitacao = db.query(ItemSolicitacao).filter(
+                # Buscar TODOS os itens da solicitacao
+                itens_solicitacao = db.query(ItemSolicitacao).filter(
                     ItemSolicitacao.solicitacao_id == solicitacao_id
-                ).first()
+                ).all()
 
-                if item_solicitacao:
-                    # Verificar se ja existe ItemProposta
+                for item_solicitacao in itens_solicitacao:
+                    # Verificar se ja existe ItemProposta para este item
                     item_proposta = db.query(ItemProposta).filter(
                         ItemProposta.proposta_id == proposta.id,
                         ItemProposta.item_solicitacao_id == item_solicitacao.id
@@ -852,13 +852,13 @@ Responda APENAS com JSON no formato:
                         if dados_extraidos.get('marca_produto'):
                             item_proposta.marca_oferecida = dados_extraidos['marca_produto']
                     else:
-                        # Criar novo
+                        # Criar novo para cada item da solicitacao
                         item_proposta = ItemProposta(
                             proposta_id=proposta.id,
                             item_solicitacao_id=item_solicitacao.id,
                             preco_unitario=preco_unitario,
                             preco_final=preco_unitario,
-                            quantidade_disponivel=dados_extraidos.get('quantidade'),
+                            quantidade_disponivel=item_solicitacao.quantidade,  # Usar qtd da solicitacao
                             marca_oferecida=dados_extraidos.get('marca_produto'),
                             tenant_id=tenant_id
                         )
