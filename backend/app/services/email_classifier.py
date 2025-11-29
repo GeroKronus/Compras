@@ -327,43 +327,100 @@ class EmailClassifier:
 
     def _extrair_texto_pdf(self, pdf_bytes: bytes) -> str:
         """
-        Extrai texto de um arquivo PDF em bytes.
+        Extrai texto E campos de formulario (AcroForm) de um arquivo PDF.
+
+        IMPORTANTE: PDFs preenchíveis armazenam valores em campos de formulário,
+        não como texto visível. Esta função extrai AMBOS.
 
         Args:
             pdf_bytes: Conteudo do PDF em bytes
 
         Returns:
-            Texto extraido do PDF
+            Texto extraido do PDF incluindo valores de campos de formulário
         """
         try:
             import io
 
-            # Tentar usar PyPDF2/pypdf
+            # Tentar usar PyPDF2/pypdf (preferido por suportar AcroForm)
             try:
                 from pypdf import PdfReader
                 reader = PdfReader(io.BytesIO(pdf_bytes))
-                texto = ""
-                for page in reader.pages:
-                    texto += page.extract_text() + "\n"
-                return texto.strip()
-            except ImportError:
-                pass
 
-            # Tentar usar PyMuPDF (fitz)
+                # CRITICO: Extrair campos de formulario AcroForm PRIMEIRO
+                campos_formulario = ""
+                try:
+                    fields = reader.get_fields()
+                    if fields:
+                        campos_formulario = "=== VALORES PREENCHIDOS NO FORMULARIO ===\n"
+                        for nome_campo, info_campo in fields.items():
+                            # Extrair valor do campo (/V = Value)
+                            valor = None
+                            if isinstance(info_campo, dict):
+                                valor = info_campo.get('/V') or info_campo.get('value')
+                            elif hasattr(info_campo, 'value'):
+                                valor = info_campo.value
+
+                            if valor:
+                                # Limpar nome do campo para facilitar parsing
+                                nome_limpo = nome_campo.replace('_', ' ').replace('-', ' ')
+                                campos_formulario += f"{nome_limpo}: {valor}\n"
+                                print(f"[PDF] Campo encontrado: {nome_limpo} = {valor}")
+
+                        campos_formulario += "=== FIM DOS CAMPOS DO FORMULARIO ===\n\n"
+                        print(f"[PDF] Total de campos extraidos: {len(fields)}")
+                except Exception as e:
+                    print(f"[PDF] Erro ao extrair campos AcroForm: {e}")
+
+                # Extrair texto visivel das paginas
+                texto_paginas = ""
+                for page in reader.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        texto_paginas += page_text + "\n"
+
+                # Combinar: campos do formulario TEM PRIORIDADE
+                resultado = campos_formulario + texto_paginas
+                return resultado.strip()
+
+            except ImportError:
+                print("[PDF] pypdf nao disponivel, tentando alternativas...")
+
+            # Tentar usar PyMuPDF (fitz) - tambem suporta widgets/formularios
             try:
                 import fitz
                 doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-                texto = ""
+
+                campos_formulario = ""
+                texto_paginas = ""
+
                 for page in doc:
-                    texto += page.get_text() + "\n"
+                    # Extrair widgets (campos de formulario) da pagina
+                    try:
+                        for widget in page.widgets():
+                            if widget.field_value:
+                                nome = widget.field_name or "campo"
+                                valor = widget.field_value
+                                campos_formulario += f"{nome}: {valor}\n"
+                                print(f"[PDF/fitz] Campo: {nome} = {valor}")
+                    except Exception as e:
+                        print(f"[PDF/fitz] Erro ao extrair widgets: {e}")
+
+                    texto_paginas += page.get_text() + "\n"
+
                 doc.close()
-                return texto.strip()
+
+                if campos_formulario:
+                    campos_formulario = "=== VALORES PREENCHIDOS NO FORMULARIO ===\n" + campos_formulario + "=== FIM DOS CAMPOS DO FORMULARIO ===\n\n"
+
+                return (campos_formulario + texto_paginas).strip()
+
             except ImportError:
                 pass
 
-            # Tentar usar pdfplumber
+            # Tentar usar pdfplumber (fallback - nao extrai formularios bem)
             try:
                 import pdfplumber
+                print("[PDF] Usando pdfplumber (campos de formulario podem nao ser extraidos)")
                 with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
                     texto = ""
                     for page in pdf.pages:
@@ -377,6 +434,8 @@ class EmailClassifier:
 
         except Exception as e:
             print(f"[CLASSIFICADOR] Erro ao extrair texto do PDF: {e}")
+            import traceback
+            traceback.print_exc()
             return ""
 
     def _criar_registro_email(
