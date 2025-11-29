@@ -45,6 +45,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
         "/api/v1/emails/teste/",  # Teste de email
         "/api/v1/setup/debug-propostas/",  # Debug propostas
         "/api/v1/setup/debug-mapa/",  # Debug mapa comparativo
+        "/api/v1/setup/criar-itens-proposta/",  # Criar itens proposta
     ]
 
     async def dispatch(self, request: Request, call_next):

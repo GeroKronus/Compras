@@ -27,7 +27,7 @@ router = APIRouter()
 @router.get("/version")
 def get_version():
     """Retorna versão do backend"""
-    return {"version": "1.0038", "endpoint": "setup/version"}
+    return {"version": "1.0039", "endpoint": "setup/version"}
 
 
 class SetupRequest(BaseModel):
@@ -430,6 +430,97 @@ def debug_mapa_comparativo(solicitacao_id: int):
                     "itens": itens_mapa,
                     "resumo": resumo_fornecedores
                 }
+            }
+        finally:
+            db.close()
+    except Exception as e:
+        import traceback
+        return {"erro": str(e), "traceback": traceback.format_exc()}
+
+
+@router.post("/criar-itens-proposta/{solicitacao_id}")
+def criar_itens_proposta_faltantes(solicitacao_id: int):
+    """
+    Cria itens_proposta faltantes para propostas que só têm valor_total.
+    Distribui o valor total igualmente entre os itens da solicitação.
+    SEM AUTENTICAÇÃO - apenas para correção de dados.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.models.cotacao import PropostaFornecedor, ItemProposta, ItemSolicitacao, StatusProposta
+        from decimal import Decimal
+
+        db = SessionLocal()
+        try:
+            # Buscar itens da solicitação
+            itens_solic = db.query(ItemSolicitacao).filter(
+                ItemSolicitacao.solicitacao_id == solicitacao_id
+            ).all()
+
+            if not itens_solic:
+                return {"erro": "Nenhum item de solicitação encontrado"}
+
+            # Buscar propostas recebidas
+            propostas = db.query(PropostaFornecedor).filter(
+                PropostaFornecedor.solicitacao_id == solicitacao_id,
+                PropostaFornecedor.status == StatusProposta.RECEBIDA
+            ).all()
+
+            if not propostas:
+                return {"erro": "Nenhuma proposta recebida encontrada"}
+
+            itens_criados = []
+
+            for proposta in propostas:
+                # Verificar se já tem itens
+                itens_existentes = db.query(ItemProposta).filter(
+                    ItemProposta.proposta_id == proposta.id
+                ).count()
+
+                if itens_existentes > 0:
+                    itens_criados.append({
+                        "proposta_id": proposta.id,
+                        "status": "já possui itens",
+                        "itens_existentes": itens_existentes
+                    })
+                    continue
+
+                # Calcular preço unitário por item (dividir valor total pelos itens)
+                valor_total = Decimal(str(proposta.valor_total or 0))
+                num_itens = len(itens_solic)
+
+                for item_solic in itens_solic:
+                    qtd = Decimal(str(item_solic.quantidade or 1))
+                    # Calcular preço unitário proporcional
+                    preco_unitario = valor_total / num_itens / qtd
+                    preco_final = preco_unitario * qtd
+
+                    novo_item = ItemProposta(
+                        proposta_id=proposta.id,
+                        item_solicitacao_id=item_solic.id,
+                        preco_unitario=preco_unitario,
+                        quantidade_disponivel=qtd,
+                        desconto_percentual=Decimal('0'),
+                        preco_final=preco_final,
+                        tenant_id=proposta.tenant_id
+                    )
+                    db.add(novo_item)
+
+                    itens_criados.append({
+                        "proposta_id": proposta.id,
+                        "item_solicitacao_id": item_solic.id,
+                        "preco_unitario": float(preco_unitario),
+                        "quantidade": float(qtd),
+                        "preco_final": float(preco_final)
+                    })
+
+            db.commit()
+
+            return {
+                "sucesso": True,
+                "solicitacao_id": solicitacao_id,
+                "itens_criados": itens_criados,
+                "total_itens": len(itens_criados)
             }
         finally:
             db.close()
