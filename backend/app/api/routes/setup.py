@@ -160,35 +160,35 @@ def diagnostico_cotacoes(db: Session = Depends(get_db)):
     Endpoint temporário de diagnóstico para verificar estado das cotações.
     SEM AUTENTICAÇÃO - apenas para debug.
     """
-    from sqlalchemy import text
+    from app.models.cotacao import SolicitacaoCotacao, PropostaFornecedor
 
-    result = {"solicitacoes": [], "propostas": []}
-
-    try:
-        # Solicitações - query simples
-        sol_result = db.execute(text("SELECT id, numero, titulo, status, tenant_id FROM solicitacoes_cotacao")).fetchall()
-        for row in sol_result:
-            result["solicitacoes"].append({
-                "id": row[0], "numero": row[1], "titulo": row[2],
-                "status": str(row[3]) if row[3] else None, "tenant_id": row[4]
-            })
-    except Exception as e:
-        result["erro_solicitacoes"] = str(e)
+    dados = {"solicitacoes": [], "propostas": []}
 
     try:
-        # Propostas - query simples sem JOIN
-        prop_result = db.execute(text("SELECT id, solicitacao_id, fornecedor_id, status, valor_total, tenant_id FROM propostas_fornecedor")).fetchall()
-        for row in prop_result:
-            result["propostas"].append({
-                "id": row[0], "solicitacao_id": row[1], "fornecedor_id": row[2],
-                "status": str(row[3]) if row[3] else None,
-                "valor_total": float(row[4]) if row[4] else None,
-                "tenant_id": row[5]
+        # Solicitações via ORM
+        solicitacoes = db.query(SolicitacaoCotacao).all()
+        for s in solicitacoes:
+            dados["solicitacoes"].append({
+                "id": s.id, "numero": s.numero, "titulo": s.titulo,
+                "status": s.status.value if s.status else None, "tenant_id": s.tenant_id
             })
     except Exception as e:
-        result["erro_propostas"] = str(e)
+        dados["erro_solicitacoes"] = str(e)
 
-    return result
+    try:
+        # Propostas via ORM
+        propostas = db.query(PropostaFornecedor).all()
+        for p in propostas:
+            dados["propostas"].append({
+                "id": p.id, "solicitacao_id": p.solicitacao_id, "fornecedor_id": p.fornecedor_id,
+                "status": p.status.value if p.status else None,
+                "valor_total": float(p.valor_total) if p.valor_total else None,
+                "tenant_id": p.tenant_id
+            })
+    except Exception as e:
+        dados["erro_propostas"] = str(e)
+
+    return dados
 
 
 @router.post("/corrigir-tenant-ids")
