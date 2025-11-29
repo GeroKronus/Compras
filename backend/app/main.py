@@ -42,7 +42,7 @@ def health_check():
 @app.get("/api/v1/version")
 def get_api_version():
     """Retorna versão do backend para verificar deploy"""
-    return {"version": "1.0062", "status": "ok"}
+    return {"version": "1.0063", "status": "ok"}
 
 # Debug: testar pypdf
 @app.get("/debug/pypdf")
@@ -143,29 +143,30 @@ def reprocessar_email(email_id: int):
 
         mail.logout()
 
-        # Classificar pela IA
+        # Extrair dados via IA
         try:
-            classificacao = email_classifier._classificar_email_ia(
-                email_proc.assunto or "",
-                corpo,
-                email_proc.remetente or "",
-                conteudo_pdf
-            )
-            resultado["classificacao"] = classificacao
-            resultado["etapas"].append("IA classificou")
+            from app.services.ai_service import ai_service
+
+            dados_extraidos = ai_service.extrair_dados_proposta_email(corpo, conteudo_pdf)
+            resultado["dados_extraidos"] = dados_extraidos
+            resultado["etapas"].append("IA extraiu dados")
 
             # Atualizar registro
-            email_proc.tipo = classificacao.get("tipo", "outros")
-            email_proc.dados_extraidos = str(classificacao.get("dados_extraidos", {}))
+            import json
+            email_proc.tipo = "resposta_cotacao"  # Assume que emails com PDF são respostas
+            email_proc.dados_extraidos = json.dumps(dados_extraidos)
             email_proc.status = "processado"
             email_proc.data_processamento = datetime.utcnow()
 
-            # Vincular proposta se for resposta_cotacao
-            if classificacao.get("tipo") == "resposta_cotacao":
-                email_classifier._vincular_proposta(
-                    db, email_proc, classificacao, email_proc.tenant_id
-                )
-                resultado["etapas"].append("proposta vinculada")
+            # Vincular proposta usando método do classifier
+            classificacao = {
+                "tipo": "resposta_cotacao",
+                "dados_extraidos": dados_extraidos
+            }
+            email_classifier._vincular_proposta(
+                db, email_proc, classificacao, email_proc.tenant_id
+            )
+            resultado["etapas"].append("proposta vinculada")
 
             db.commit()
             resultado["sucesso"] = True
