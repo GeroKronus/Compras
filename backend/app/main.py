@@ -42,7 +42,7 @@ def health_check():
 @app.get("/api/v1/version")
 def get_api_version():
     """Retorna versão do backend para verificar deploy"""
-    return {"version": "1.0061", "status": "ok"}
+    return {"version": "1.0062", "status": "ok"}
 
 # Debug: testar pypdf
 @app.get("/debug/pypdf")
@@ -63,6 +63,126 @@ def debug_pypdf():
         resultado["pypdf_ok"] = False
         resultado["erro"] = str(e)
         resultado["traceback"] = traceback.format_exc()
+    return resultado
+
+
+# Debug: reprocessar email específico
+@app.post("/debug/reprocessar/{email_id}")
+def reprocessar_email(email_id: int):
+    """Reprocessa um email específico com extração de PDF."""
+    import traceback
+    from datetime import datetime
+    resultado = {"email_id": email_id, "etapas": []}
+
+    try:
+        from app.database import SessionLocal
+        from app.models.email_processado import EmailProcessado
+        resultado["etapas"].append("imports db ok")
+
+        db = SessionLocal()
+        resultado["etapas"].append("db session ok")
+
+        email_proc = db.query(EmailProcessado).filter(
+            EmailProcessado.id == email_id
+        ).first()
+
+        if not email_proc:
+            db.close()
+            resultado["erro"] = "Email não encontrado no banco"
+            return resultado
+
+        resultado["email_uid"] = email_proc.email_uid
+        resultado["remetente"] = email_proc.remetente
+        resultado["assunto"] = email_proc.assunto
+        resultado["etapas"].append("email encontrado no banco")
+
+        # Buscar email via IMAP
+        import imaplib
+        import email as email_lib
+        from app.config import settings
+
+        mail = imaplib.IMAP4_SSL(
+            settings.IMAP_HOST or 'imappro.zoho.com',
+            settings.IMAP_PORT or 993
+        )
+        mail.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+        mail.select('INBOX')
+        resultado["etapas"].append("conectado IMAP")
+
+        fetch_result, msg_data = mail.fetch(email_proc.email_uid.encode(), '(RFC822)')
+        resultado["etapas"].append(f"fetch: {fetch_result}")
+
+        if fetch_result != 'OK' or not msg_data or not msg_data[0]:
+            mail.logout()
+            resultado["erro"] = "Email não encontrado no IMAP"
+            db.close()
+            return resultado
+
+        raw_email = msg_data[0][1]
+        msg = email_lib.message_from_bytes(raw_email)
+        resultado["etapas"].append("email parseado")
+
+        # Extrair corpo
+        from app.services.email_classifier import email_classifier
+        resultado["etapas"].append("classifier importado")
+
+        corpo = email_classifier._extrair_corpo(msg)
+        resultado["corpo_tamanho"] = len(corpo) if corpo else 0
+        resultado["etapas"].append("corpo extraido")
+
+        # Extrair PDF
+        try:
+            conteudo_pdf = email_classifier._extrair_anexos_pdf(msg)
+            resultado["pdf_tamanho"] = len(conteudo_pdf) if conteudo_pdf else 0
+            resultado["pdf_preview"] = conteudo_pdf[:500] if conteudo_pdf else "(nenhum)"
+            resultado["etapas"].append("PDF extraido")
+        except Exception as pdf_err:
+            resultado["pdf_erro"] = str(pdf_err)
+            resultado["etapas"].append(f"erro PDF: {pdf_err}")
+            conteudo_pdf = None
+
+        mail.logout()
+
+        # Classificar pela IA
+        try:
+            classificacao = email_classifier._classificar_email_ia(
+                email_proc.assunto or "",
+                corpo,
+                email_proc.remetente or "",
+                conteudo_pdf
+            )
+            resultado["classificacao"] = classificacao
+            resultado["etapas"].append("IA classificou")
+
+            # Atualizar registro
+            email_proc.tipo = classificacao.get("tipo", "outros")
+            email_proc.dados_extraidos = str(classificacao.get("dados_extraidos", {}))
+            email_proc.status = "processado"
+            email_proc.data_processamento = datetime.utcnow()
+
+            # Vincular proposta se for resposta_cotacao
+            if classificacao.get("tipo") == "resposta_cotacao":
+                email_classifier._vincular_proposta(
+                    db, email_proc, classificacao, email_proc.tenant_id
+                )
+                resultado["etapas"].append("proposta vinculada")
+
+            db.commit()
+            resultado["sucesso"] = True
+            resultado["etapas"].append("salvo no banco")
+
+        except Exception as ia_err:
+            resultado["ia_erro"] = str(ia_err)
+            resultado["ia_traceback"] = traceback.format_exc()
+            resultado["etapas"].append(f"erro IA: {ia_err}")
+            db.rollback()
+
+        db.close()
+
+    except Exception as e:
+        resultado["erro"] = str(e)
+        resultado["traceback"] = traceback.format_exc()
+
     return resultado
 
 # Debug: verificar caminho do frontend
