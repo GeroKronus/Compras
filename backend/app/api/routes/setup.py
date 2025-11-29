@@ -217,6 +217,21 @@ def diagnostico_cotacoes():
                     "tenant_id": row[4]
                 })
 
+            # Emails processados com dados extraídos
+            dados["emails_dados_extraidos"] = []
+            email_rows = db.execute(text("""
+                SELECT id, remetente, assunto, proposta_id, dados_extraidos
+                FROM emails_processados
+                WHERE dados_extraidos IS NOT NULL
+                ORDER BY id DESC
+                LIMIT 10
+            """)).fetchall()
+            for row in email_rows:
+                dados["emails_dados_extraidos"].append({
+                    "id": row[0], "remetente": row[1], "assunto": row[2],
+                    "proposta_id": row[3], "dados_extraidos": row[4]
+                })
+
             return dados
         finally:
             db.close()
