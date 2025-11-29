@@ -95,7 +95,7 @@ def startup_event():
 
     # Criar tabelas do banco de dados automaticamente
     try:
-        from app.database import engine
+        from app.database import engine, SessionLocal
         from app.models.base import Base
         # Importar todos os models para registrar no metadata
         from app.models import (
@@ -105,6 +105,28 @@ def startup_event():
         )
         Base.metadata.create_all(bind=engine)
         print("[STARTUP] Tabelas do banco de dados criadas/verificadas!")
+
+        # Corrigir tenant_ids das propostas automaticamente
+        from sqlalchemy import text
+        db = SessionLocal()
+        try:
+            # Sincronizar tenant_id das propostas com a solicitacao
+            result = db.execute(text("""
+                UPDATE propostas_fornecedor p
+                SET tenant_id = s.tenant_id
+                FROM solicitacoes_cotacao s
+                WHERE p.solicitacao_id = s.id
+                AND p.tenant_id != s.tenant_id
+            """))
+            if result.rowcount > 0:
+                print(f"[STARTUP] Corrigidos {result.rowcount} propostas com tenant_id incorreto")
+            db.commit()
+        except Exception as e2:
+            db.rollback()
+            print(f"[STARTUP] Erro ao corrigir tenant_ids: {e2}")
+        finally:
+            db.close()
+
     except Exception as e:
         print(f"[STARTUP] Erro ao criar tabelas: {e}")
 
