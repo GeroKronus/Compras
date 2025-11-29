@@ -167,66 +167,53 @@ def diagnostico_cotacoes(db: Session = Depends(get_db)):
     SEM AUTENTICAÇÃO - apenas para debug.
     """
     try:
-        # Buscar todas as solicitações
-        solicitacoes = db.query(SolicitacaoCotacao).all()
+        # Buscar todas as solicitações - usando texto SQL puro
+        from sqlalchemy import text
 
-        result = {
-            "total_solicitacoes": len(solicitacoes),
-            "solicitacoes": []
-        }
+        result = {"solicitacoes": [], "propostas": [], "itens_propostas": []}
 
-        for sol in solicitacoes:
-            # Buscar propostas desta solicitação
-            propostas = db.query(PropostaFornecedor).filter(
-                PropostaFornecedor.solicitacao_id == sol.id
-            ).all()
-
-            # Buscar itens da solicitação
-            itens_sol = db.query(ItemSolicitacao).filter(
-                ItemSolicitacao.solicitacao_id == sol.id
-            ).all()
-
-            propostas_data = []
-            for prop in propostas:
-                # Buscar fornecedor
-                forn = db.query(Fornecedor).filter(Fornecedor.id == prop.fornecedor_id).first()
-
-                # Buscar itens da proposta
-                itens_prop = db.query(ItemProposta).filter(
-                    ItemProposta.proposta_id == prop.id
-                ).all()
-
-                propostas_data.append({
-                    "id": prop.id,
-                    "fornecedor_id": prop.fornecedor_id,
-                    "fornecedor_nome": forn.razao_social if forn else "N/A",
-                    "status": prop.status.value if prop.status else None,
-                    "valor_total": float(prop.valor_total) if prop.valor_total else None,
-                    "data_envio": str(prop.data_envio) if prop.data_envio else None,
-                    "total_itens": len(itens_prop),
-                    "itens": [
-                        {
-                            "produto_id": item.produto_id,
-                            "quantidade": float(item.quantidade) if item.quantidade else None,
-                            "preco_unitario": float(item.preco_unitario) if item.preco_unitario else None
-                        }
-                        for item in itens_prop
-                    ]
-                })
-
+        # Solicitações
+        sol_query = text("SELECT id, numero, titulo, status, tenant_id FROM solicitacoes_cotacao")
+        solicitacoes = db.execute(sol_query).fetchall()
+        for row in solicitacoes:
             result["solicitacoes"].append({
-                "id": sol.id,
-                "numero": sol.numero,
-                "titulo": sol.titulo,
-                "status": sol.status.value if sol.status else None,
-                "tenant_id": sol.tenant_id,
-                "data_abertura": str(sol.data_abertura) if sol.data_abertura else None,
-                "total_itens": len(itens_sol),
-                "total_propostas": len(propostas),
-                "propostas": propostas_data
+                "id": row[0], "numero": row[1], "titulo": row[2],
+                "status": row[3], "tenant_id": row[4]
+            })
+
+        # Propostas
+        prop_query = text("""
+            SELECT p.id, p.solicitacao_id, p.fornecedor_id, p.status, p.valor_total, p.tenant_id,
+                   f.razao_social as fornecedor_nome
+            FROM propostas_fornecedor p
+            LEFT JOIN fornecedores f ON p.fornecedor_id = f.id
+        """)
+        propostas = db.execute(prop_query).fetchall()
+        for row in propostas:
+            result["propostas"].append({
+                "id": row[0], "solicitacao_id": row[1], "fornecedor_id": row[2],
+                "status": row[3], "valor_total": float(row[4]) if row[4] else None,
+                "tenant_id": row[5], "fornecedor_nome": row[6]
+            })
+
+        # Itens das propostas
+        item_query = text("""
+            SELECT ip.id, ip.proposta_id, ip.produto_id, ip.quantidade, ip.preco_unitario,
+                   pr.codigo as produto_codigo, pr.nome as produto_nome
+            FROM itens_proposta ip
+            LEFT JOIN produtos pr ON ip.produto_id = pr.id
+        """)
+        itens = db.execute(item_query).fetchall()
+        for row in itens:
+            result["itens_propostas"].append({
+                "id": row[0], "proposta_id": row[1], "produto_id": row[2],
+                "quantidade": float(row[3]) if row[3] else None,
+                "preco_unitario": float(row[4]) if row[4] else None,
+                "produto_codigo": row[5], "produto_nome": row[6]
             })
 
         return result
 
     except Exception as e:
-        return {"erro": str(e), "tipo": type(e).__name__}
+        import traceback
+        return {"erro": str(e), "tipo": type(e).__name__, "traceback": traceback.format_exc()}
