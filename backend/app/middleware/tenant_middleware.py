@@ -48,8 +48,10 @@ class TenantMiddleware(BaseHTTPMiddleware):
         "/api/v1/setup/criar-itens-proposta/",  # Criar itens proposta
         "/api/v1/setup/processar-emails/",  # Processamento manual de emails
         "/api/v1/setup/limpar-propostas/",  # Limpar propostas
+        "/api/v1/setup/limpar-emails-propostas/",  # Limpar emails e propostas
         "/api/v1/setup/reprocessar-proposta/",  # Reprocessar proposta
         "/api/v1/setup/forcar-reprocessamento-email/",  # Forcar reprocessamento
+        "/api/v1/setup/teste-simples",  # Endpoint de teste
     ]
 
     async def dispatch(self, request: Request, call_next):
