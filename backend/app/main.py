@@ -37,6 +37,13 @@ def health_check():
     """Health check para monitoramento"""
     return {"status": "healthy"}
 
+
+# Endpoint de versão simples (sem dependências)
+@app.get("/api/v1/version")
+def get_api_version():
+    """Retorna versão do backend para verificar deploy"""
+    return {"version": "1.0032", "status": "ok"}
+
 # Debug: verificar caminho do frontend
 @app.get("/debug/static")
 def debug_static():
