@@ -27,14 +27,16 @@ class EmailClassifier:
     """
 
     # Padroes para extrair ID da solicitacao do assunto
-    # Suporta tanto formato com ID numerico quanto com numero formatado (SOL-2024-XXXX)
+    # Suporta tanto formato com ID numerico quanto com numero formatado (SOL-2024-XXXX ou SC-2025-XXXX)
     PADROES_ASSUNTO = [
         r'COTACAO\s*#\s*(\d+)',
         r'COTACAO-(\d+)',
         r'COTACAO\s+(\d+)',
         r'Re:\s*\[COTACAO\s*#\s*(\d+)\]',
         r'\[COTACAO\s+SOL-\d{4}-(\d+)\]',  # [COTAÇÃO SOL-2024-0001] -> extrai 0001
+        r'\[COTACAO\s+SC-\d{4}-(\d+)\]',  # [COTAÇÃO SC-2025-00001] -> extrai 00001
         r'SOL-\d{4}-(\d+)',  # SOL-2024-0001 -> extrai 0001
+        r'SC-\d{4}-(\d+)',  # SC-2025-00001 -> extrai 00001
         r'Referencia:\s*COTACAO-(\d+)',  # Referência: COTACAO-123
     ]
 
@@ -519,11 +521,23 @@ class EmailClassifier:
         assunto_normalizado = ''.join(c for c in assunto_normalizado if unicodedata.category(c) != 'Mn')
         assunto_normalizado = assunto_normalizado.upper()
 
+        # Primeiro tentar extrair numero formatado completo (SC-2025-00001 ou SOL-2024-0001)
+        match_numero = re.search(r'(SC|SOL)-(\d{4})-(\d+)', assunto_normalizado)
+        if match_numero:
+            numero_formatado = f"{match_numero.group(1)}-{match_numero.group(2)}-{match_numero.group(3)}"
+            solicitacao = db.query(SolicitacaoCotacao).filter(
+                SolicitacaoCotacao.tenant_id == tenant_id,
+                SolicitacaoCotacao.numero == numero_formatado
+            ).first()
+            if solicitacao:
+                return solicitacao.id
+
+        # Fallback: tentar extrair ID numerico
         for padrao in self.PADROES_ASSUNTO:
             match = re.search(padrao, assunto_normalizado)
             if match:
                 solicitacao_id = int(match.group(1))
-                # Verificar se solicitacao existe
+                # Verificar se solicitacao existe por ID
                 solicitacao = db.query(SolicitacaoCotacao).filter(
                     SolicitacaoCotacao.tenant_id == tenant_id,
                     SolicitacaoCotacao.id == solicitacao_id

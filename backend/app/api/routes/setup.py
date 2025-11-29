@@ -27,7 +27,7 @@ router = APIRouter()
 @router.get("/version")
 def get_version():
     """Retorna versão do backend"""
-    return {"version": "1.0043", "endpoint": "setup/version"}
+    return {"version": "1.0044", "endpoint": "setup/version"}
 
 
 class SetupRequest(BaseModel):
