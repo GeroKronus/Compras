@@ -24,6 +24,12 @@ def create_all_tables():
 router = APIRouter()
 
 
+@router.get("/version")
+def get_version():
+    """Retorna versão do backend"""
+    return {"version": "1.0031", "endpoint": "setup/version"}
+
+
 class SetupRequest(BaseModel):
     """Schema para requisição de setup inicial"""
     email: EmailStr
