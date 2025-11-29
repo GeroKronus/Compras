@@ -44,6 +44,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
     PUBLIC_PREFIXES = [
         "/api/v1/emails/teste/",  # Teste de email
         "/api/v1/setup/debug-propostas/",  # Debug propostas
+        "/api/v1/setup/debug-mapa/",  # Debug mapa comparativo
     ]
 
     async def dispatch(self, request: Request, call_next):

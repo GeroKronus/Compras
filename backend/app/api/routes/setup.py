@@ -27,7 +27,7 @@ router = APIRouter()
 @router.get("/version")
 def get_version():
     """Retorna versão do backend"""
-    return {"version": "1.0037", "endpoint": "setup/version"}
+    return {"version": "1.0038", "endpoint": "setup/version"}
 
 
 class SetupRequest(BaseModel):
@@ -306,6 +306,130 @@ def debug_propostas(solicitacao_id: int):
                 "items": items,
                 "total": len(items),
                 "erros": erros
+            }
+        finally:
+            db.close()
+    except Exception as e:
+        import traceback
+        return {"erro": str(e), "traceback": traceback.format_exc()}
+
+
+@router.get("/debug-mapa/{solicitacao_id}")
+def debug_mapa_comparativo(solicitacao_id: int):
+    """
+    DEBUG: Simula o endpoint mapa-comparativo sem autenticação.
+    Mostra exatamente o que o endpoint real retornaria.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.models.cotacao import SolicitacaoCotacao, PropostaFornecedor, ItemSolicitacao, ItemProposta, StatusProposta
+        from app.models.fornecedor import Fornecedor
+        from app.models.produto import Produto
+
+        db = SessionLocal()
+        try:
+            # Buscar solicitacao
+            solicitacao = db.query(SolicitacaoCotacao).filter(
+                SolicitacaoCotacao.id == solicitacao_id
+            ).first()
+
+            if not solicitacao:
+                return {"erro": f"Solicitacao {solicitacao_id} nao encontrada"}
+
+            # Buscar itens da solicitacao
+            itens_solicitacao = db.query(ItemSolicitacao).filter(
+                ItemSolicitacao.solicitacao_id == solicitacao_id
+            ).all()
+
+            # Buscar propostas (sem filtro tenant_id - igual ao endpoint corrigido)
+            propostas = db.query(PropostaFornecedor).filter(
+                PropostaFornecedor.solicitacao_id == solicitacao_id,
+                PropostaFornecedor.status.in_([StatusProposta.RECEBIDA, StatusProposta.VENCEDORA])
+            ).all()
+
+            # Debug info
+            debug_info = {
+                "solicitacao_id": solicitacao_id,
+                "solicitacao_numero": solicitacao.numero,
+                "solicitacao_tenant_id": solicitacao.tenant_id,
+                "total_itens_solicitacao": len(itens_solicitacao),
+                "total_propostas_encontradas": len(propostas),
+                "propostas_detalhes": []
+            }
+
+            for p in propostas:
+                fornecedor = db.query(Fornecedor).filter(Fornecedor.id == p.fornecedor_id).first()
+                itens_proposta = db.query(ItemProposta).filter(ItemProposta.proposta_id == p.id).all()
+                debug_info["propostas_detalhes"].append({
+                    "proposta_id": p.id,
+                    "fornecedor_id": p.fornecedor_id,
+                    "fornecedor_nome": fornecedor.razao_social if fornecedor else None,
+                    "status": str(p.status),
+                    "tenant_id": p.tenant_id,
+                    "valor_total": float(p.valor_total) if p.valor_total else None,
+                    "total_itens_proposta": len(itens_proposta)
+                })
+
+            # Simular a lógica do mapa comparativo
+            itens_mapa = []
+            resumo_fornecedores = {}
+
+            for item_solic in itens_solicitacao:
+                produto = db.query(Produto).filter(Produto.id == item_solic.produto_id).first()
+                item_map = {
+                    "item_solicitacao_id": item_solic.id,
+                    "produto_id": item_solic.produto_id,
+                    "produto_nome": produto.nome if produto else "N/A",
+                    "produto_codigo": produto.codigo if produto else "N/A",
+                    "quantidade_solicitada": float(item_solic.quantidade) if item_solic.quantidade else 0,
+                    "propostas": []
+                }
+
+                for proposta in propostas:
+                    fornecedor = db.query(Fornecedor).filter(Fornecedor.id == proposta.fornecedor_id).first()
+                    item_proposta = db.query(ItemProposta).filter(
+                        ItemProposta.proposta_id == proposta.id,
+                        ItemProposta.item_solicitacao_id == item_solic.id
+                    ).first()
+
+                    if item_proposta:
+                        item_map["propostas"].append({
+                            "proposta_id": proposta.id,
+                            "fornecedor_id": proposta.fornecedor_id,
+                            "fornecedor_nome": fornecedor.razao_social if fornecedor else "N/A",
+                            "fornecedor_cnpj": fornecedor.cnpj if fornecedor else "",
+                            "preco_unitario": float(item_proposta.preco_unitario) if item_proposta.preco_unitario else 0,
+                            "quantidade_disponivel": float(item_proposta.quantidade_disponivel or 0),
+                            "desconto_percentual": float(item_proposta.desconto_percentual or 0),
+                            "preco_final": float(item_proposta.preco_final or 0),
+                            "prazo_entrega_item": item_proposta.prazo_entrega_item,
+                            "marca_oferecida": item_proposta.marca_oferecida
+                        })
+
+                        # Atualizar resumo (usando proposta.id como chave, igual ao endpoint real)
+                        if proposta.id not in resumo_fornecedores:
+                            resumo_fornecedores[proposta.id] = {
+                                "fornecedor_nome": fornecedor.razao_social if fornecedor else "N/A",
+                                "fornecedor_cnpj": fornecedor.cnpj if fornecedor else "",
+                                "valor_total": float(proposta.valor_total or 0),
+                                "itens_cotados": 1,
+                                "prazo_medio": proposta.prazo_entrega or 0
+                            }
+                        else:
+                            resumo_fornecedores[proposta.id]["itens_cotados"] += 1
+
+                itens_mapa.append(item_map)
+
+            # Retornar exatamente o formato do endpoint real
+            return {
+                "debug_info": debug_info,
+                "mapa_comparativo": {
+                    "solicitacao_id": solicitacao_id,
+                    "solicitacao_numero": solicitacao.numero,
+                    "solicitacao_titulo": solicitacao.titulo,
+                    "itens": itens_mapa,
+                    "resumo": resumo_fornecedores
+                }
             }
         finally:
             db.close()
