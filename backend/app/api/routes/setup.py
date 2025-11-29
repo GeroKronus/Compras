@@ -160,11 +160,11 @@ def diagnostico_cotacoes(db: Session = Depends(get_db)):
     Endpoint temporário de diagnóstico para verificar estado das cotações.
     SEM AUTENTICAÇÃO - apenas para debug.
     """
-    from app.models.cotacao import SolicitacaoCotacao, PropostaFornecedor
-
-    dados = {"solicitacoes": [], "propostas": []}
-
     try:
+        from app.models.cotacao import SolicitacaoCotacao, PropostaFornecedor
+
+        dados = {"solicitacoes": [], "propostas": []}
+
         # Solicitações via ORM
         solicitacoes = db.query(SolicitacaoCotacao).all()
         for s in solicitacoes:
@@ -172,10 +172,7 @@ def diagnostico_cotacoes(db: Session = Depends(get_db)):
                 "id": s.id, "numero": s.numero, "titulo": s.titulo,
                 "status": s.status.value if s.status else None, "tenant_id": s.tenant_id
             })
-    except Exception as e:
-        dados["erro_solicitacoes"] = str(e)
 
-    try:
         # Propostas via ORM
         propostas = db.query(PropostaFornecedor).all()
         for p in propostas:
@@ -185,10 +182,11 @@ def diagnostico_cotacoes(db: Session = Depends(get_db)):
                 "valor_total": float(p.valor_total) if p.valor_total else None,
                 "tenant_id": p.tenant_id
             })
-    except Exception as e:
-        dados["erro_propostas"] = str(e)
 
-    return dados
+        return dados
+    except Exception as e:
+        import traceback
+        return {"erro": str(e), "trace": traceback.format_exc()}
 
 
 @router.post("/corrigir-tenant-ids")
