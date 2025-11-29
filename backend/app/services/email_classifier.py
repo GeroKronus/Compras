@@ -111,21 +111,26 @@ class EmailClassifier:
                         elif metodo == MetodoClassificacao.IA:
                             stats["classificados_ia"] += 1
 
-                        # Se tem solicitacao e fornecedor, extrair dados da proposta
+                        # Se tem solicitacao e fornecedor, marcar proposta como RECEBIDA
                         if solicitacao_id and fornecedor_id:
+                            # Primeiro, marcar proposta como RECEBIDA (mesmo sem dados extraidos)
+                            proposta_id = self._marcar_proposta_recebida(
+                                db, tenant_id, solicitacao_id, fornecedor_id
+                            )
+                            if proposta_id:
+                                email_processado.proposta_id = proposta_id
+
+                            # Tentar extrair dados da proposta via IA
                             dados_extraidos = self._extrair_dados_proposta(
                                 email_data['corpo'],
                                 email_data.get('conteudo_pdf')
                             )
                             if dados_extraidos:
                                 email_processado.dados_extraidos = json.dumps(dados_extraidos)
-
-                                # Atualizar proposta existente com os dados extraidos
-                                proposta_id = self._atualizar_proposta_com_dados(
+                                # Atualizar proposta com os dados extraidos
+                                self._atualizar_proposta_com_dados(
                                     db, tenant_id, solicitacao_id, fornecedor_id, dados_extraidos
                                 )
-                                if proposta_id:
-                                    email_processado.proposta_id = proposta_id
 
                     else:
                         email_processado.status = StatusEmailProcessado.PENDENTE
@@ -628,6 +633,52 @@ Responda APENAS com JSON no formato:
 
         return ai_service.extrair_dados_proposta_email(corpo or "", conteudo_pdf)
 
+    def _marcar_proposta_recebida(
+        self,
+        db: Session,
+        tenant_id: int,
+        solicitacao_id: int,
+        fornecedor_id: int
+    ) -> Optional[int]:
+        """
+        Marca uma proposta como RECEBIDA quando um email de resposta e identificado.
+        Isso acontece ANTES da extracao de dados, garantindo que a proposta
+        seja marcada mesmo que a IA nao consiga extrair os dados.
+
+        Args:
+            db: Sessao do banco
+            tenant_id: ID do tenant
+            solicitacao_id: ID da solicitacao
+            fornecedor_id: ID do fornecedor
+
+        Returns:
+            ID da proposta ou None se nao encontrada
+        """
+        # Buscar proposta existente
+        proposta = db.query(PropostaFornecedor).filter(
+            PropostaFornecedor.solicitacao_id == solicitacao_id,
+            PropostaFornecedor.fornecedor_id == fornecedor_id,
+            PropostaFornecedor.tenant_id == tenant_id
+        ).first()
+
+        if not proposta:
+            print(f"[CLASSIFICADOR] Proposta nao encontrada para solicitacao={solicitacao_id}, fornecedor={fornecedor_id}")
+            return None
+
+        try:
+            # Marcar como RECEBIDA (se ainda nao estiver)
+            if proposta.status == StatusProposta.PENDENTE:
+                proposta.status = StatusProposta.RECEBIDA
+                proposta.data_recebimento = datetime.utcnow()
+                db.flush()
+                print(f"[CLASSIFICADOR] Proposta {proposta.id} marcada como RECEBIDA")
+
+            return proposta.id
+
+        except Exception as e:
+            print(f"[CLASSIFICADOR] Erro ao marcar proposta como recebida: {e}")
+            return None
+
     def _atualizar_proposta_com_dados(
         self,
         db: Session,
@@ -730,10 +781,7 @@ Responda APENAS com JSON no formato:
                         )
                         db.add(item_proposta)
 
-            # Atualizar status da proposta para RECEBIDA
-            proposta.status = StatusProposta.RECEBIDA
-            proposta.data_recebimento = datetime.utcnow()
-
+            # Status ja foi atualizado para RECEBIDA em _marcar_proposta_recebida
             db.flush()
 
             print(f"[CLASSIFICADOR] Proposta {proposta.id} atualizada com dados do email: "
