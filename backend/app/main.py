@@ -42,7 +42,7 @@ def health_check():
 @app.get("/api/v1/version")
 def get_api_version():
     """Retorna versão do backend para verificar deploy"""
-    return {"version": "1.0067", "status": "ok"}
+    return {"version": "1.0068", "status": "ok"}
 
 # Debug: testar pypdf
 @app.get("/debug/pypdf")
@@ -154,9 +154,10 @@ def reprocessar_email(email_id: int):
             resultado["etapas"].append("IA extraiu dados")
 
             # Atualizar registro do email
+            from app.models.email_processado import StatusEmailProcessado
             email_proc.tipo = "resposta_cotacao"
             email_proc.dados_extraidos = json.dumps(dados_extraidos)
-            email_proc.status = "processado"
+            email_proc.status = StatusEmailProcessado.CLASSIFICADO
             email_proc.data_processamento = datetime.utcnow()
             resultado["etapas"].append("email atualizado")
 
@@ -369,8 +370,9 @@ def limpar_propostas(solicitacao_id: int):
             EmailProcessado.solicitacao_id == solicitacao_id
         ).all()
 
+        from app.models.email_processado import StatusEmailProcessado
         for email_proc in emails:
-            email_proc.status = "pendente"
+            email_proc.status = StatusEmailProcessado.PENDENTE
             email_proc.proposta_id = None
             email_proc.dados_extraidos = None
             email_proc.data_processamento = None
