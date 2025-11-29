@@ -474,38 +474,46 @@ def verificar_config_email():
 @router.get("/config/ia-status")
 def verificar_config_ia():
     """
-    Verificar se a IA (Anthropic) esta configurada e funcionando.
-    Testa a conexao com a API.
+    Verificar se a IA (Anthropic) esta configurada.
+    """
+    try:
+        from app.services.ai_service import ai_service
+
+        chave = settings.ANTHROPIC_API_KEY or ""
+
+        return {
+            "anthropic_configurado": bool(chave),
+            "chave_inicio": chave[:20] + "..." if len(chave) > 20 else chave,
+            "chave_fim": "..." + chave[-10:] if len(chave) > 10 else chave,
+            "chave_tamanho": len(chave),
+            "ai_service_disponivel": ai_service.is_available
+        }
+    except Exception as e:
+        return {"erro": str(e)}
+
+
+@router.get("/config/ia-testar")
+def testar_conexao_ia():
+    """
+    Testa a conexao com a API da Anthropic.
     """
     from app.services.ai_service import ai_service
 
-    chave = getattr(settings, 'ANTHROPIC_API_KEY', None) or ""
+    if not ai_service.is_available:
+        return {"teste": "FALHOU", "erro": "ai_service nao disponivel"}
 
-    resultado = {
-        "anthropic_configurado": bool(chave),
-        "chave_inicio": chave[:20] + "..." if chave else None,
-        "chave_fim": "..." + chave[-10:] if chave else None,
-        "chave_tamanho": len(chave) if chave else 0,
-        "ai_service_disponivel": ai_service.is_available,
-        "teste_conexao": None,
-        "erro": None
-    }
-
-    # Testar conexao se configurado
-    if ai_service.is_available:
-        try:
-            response = ai_service.client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=10,
-                messages=[{"role": "user", "content": "Diga apenas: OK"}]
-            )
-            resultado["teste_conexao"] = "OK"
-            resultado["resposta_teste"] = response.content[0].text
-        except Exception as e:
-            resultado["teste_conexao"] = "FALHOU"
-            resultado["erro"] = str(e)
-
-    return resultado
+    try:
+        response = ai_service.client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=10,
+            messages=[{"role": "user", "content": "Diga apenas: OK"}]
+        )
+        return {
+            "teste": "OK",
+            "resposta": response.content[0].text
+        }
+    except Exception as e:
+        return {"teste": "FALHOU", "erro": str(e)}
 
 
 @router.get("/teste/{email_destino}")
