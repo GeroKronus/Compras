@@ -155,35 +155,40 @@ def initialize_system(
 
 
 @router.get("/diagnostico")
-def diagnostico_cotacoes(db: Session = Depends(get_db)):
+def diagnostico_cotacoes():
     """
     Endpoint temporário de diagnóstico para verificar estado das cotações.
     SEM AUTENTICAÇÃO - apenas para debug.
     """
     try:
-        from app.models.cotacao import SolicitacaoCotacao, PropostaFornecedor
+        from app.database import SessionLocal
+        db = SessionLocal()
+        try:
+            from app.models.cotacao import SolicitacaoCotacao, PropostaFornecedor
 
-        dados = {"solicitacoes": [], "propostas": []}
+            dados = {"solicitacoes": [], "propostas": []}
 
-        # Solicitações via ORM
-        solicitacoes = db.query(SolicitacaoCotacao).all()
-        for s in solicitacoes:
-            dados["solicitacoes"].append({
-                "id": s.id, "numero": s.numero, "titulo": s.titulo,
-                "status": s.status.value if s.status else None, "tenant_id": s.tenant_id
-            })
+            # Solicitações via ORM
+            solicitacoes = db.query(SolicitacaoCotacao).all()
+            for s in solicitacoes:
+                dados["solicitacoes"].append({
+                    "id": s.id, "numero": s.numero, "titulo": s.titulo,
+                    "status": s.status.value if s.status else None, "tenant_id": s.tenant_id
+                })
 
-        # Propostas via ORM
-        propostas = db.query(PropostaFornecedor).all()
-        for p in propostas:
-            dados["propostas"].append({
-                "id": p.id, "solicitacao_id": p.solicitacao_id, "fornecedor_id": p.fornecedor_id,
-                "status": p.status.value if p.status else None,
-                "valor_total": float(p.valor_total) if p.valor_total else None,
-                "tenant_id": p.tenant_id
-            })
+            # Propostas via ORM
+            propostas = db.query(PropostaFornecedor).all()
+            for p in propostas:
+                dados["propostas"].append({
+                    "id": p.id, "solicitacao_id": p.solicitacao_id, "fornecedor_id": p.fornecedor_id,
+                    "status": p.status.value if p.status else None,
+                    "valor_total": float(p.valor_total) if p.valor_total else None,
+                    "tenant_id": p.tenant_id
+                })
 
-        return dados
+            return dados
+        finally:
+            db.close()
     except Exception as e:
         import traceback
         return {"erro": str(e), "trace": traceback.format_exc()}
