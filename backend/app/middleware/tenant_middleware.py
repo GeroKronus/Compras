@@ -33,6 +33,10 @@ class TenantMiddleware(BaseHTTPMiddleware):
         "/api/v1/tenants/register",  # Registro de novos tenants
         "/api/v1/setup/status",  # Verificar status do setup
         "/api/v1/setup/init",  # Inicializar sistema
+        "/api/v1/setup/version",  # Verificar versao do backend
+        "/api/v1/setup/diagnostico",  # Diagnostico de dados
+        "/api/v1/setup/corrigir-tenant-ids",  # Corrigir tenant_ids
+        "/api/v1/version",  # Endpoint de versao simples
         "/api/v1/emails/config/status",  # Verificar config de email
     ]
 
