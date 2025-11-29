@@ -213,63 +213,65 @@ PRESUMA que este email CONTEM uma proposta comercial, mesmo que esteja mal forma
 
 O fornecedor pode ter respondido de diversas formas:
 - Digitando os valores diretamente no email
-- Anexando um PDF com a proposta
+- Anexando um PDF com a proposta preenchida
 - Escrevendo de forma informal ("te faço por 50 reais", "entrego semana que vem")
 - Usando abreviacoes ("pgto 30dd", "ent. imediata", "R$15/un")
-- Misturando a resposta com a citacao do email original
 
-SUA MISSAO: Encontrar e extrair TODOS os dados comerciais possiveis.
+SUA MISSAO: Encontrar e extrair TODOS os dados comerciais, ESPECIALMENTE preços por item.
 
 ## CONTEUDO DO EMAIL E ANEXOS
 {conteudo_completo}
 
 ## REGRAS DE EXTRACAO
 
-1. PRECOS: Procure por qualquer valor monetario (R$, reais, $, "por X", "a X", "valor:", "preco:")
-   - Se encontrar "R$ 12,50" ou "12.50" ou "12,5" -> preco_unitario: 12.5
-   - Se encontrar "total de R$ 100" -> preco_total: 100
-   - Converta virgula para ponto decimal
+### PRECOS POR ITEM (MUITO IMPORTANTE!)
+A proposta pode ter MULTIPLOS ITENS com precos DIFERENTES. Extraia CADA item separadamente.
+- Se encontrar "PREÇOS POR ITEM" ou "Item 1:", "Item 2:", etc. -> liste cada um
+- Se encontrar uma tabela com produtos e precos -> extraia cada linha
+- Mantenha a ORDEM dos itens (Item 1 = indice 0, Item 2 = indice 1, etc.)
+- Converta virgula para ponto decimal (5,00 -> 5.0)
 
-2. PRAZOS: Procure por indicacoes de tempo de entrega
-   - "entrega imediata", "pronta entrega" -> prazo_entrega_dias: 0
-   - "5 dias", "5d", "5 dias uteis" -> prazo_entrega_dias: 5
-   - "1 semana" -> prazo_entrega_dias: 7
-   - "15 dias", "quinze dias" -> prazo_entrega_dias: 15
+### DADOS GERAIS
+- PRAZOS: "entrega imediata" -> 0, "5 dias" -> 5, "1 semana" -> 7
+- PAGAMENTO: "30 dias", "a vista", "boleto 30dd"
+- FRETE: "CIF"/"frete incluso" -> true, "FOB"/"+ frete" -> false
 
-3. PAGAMENTO: Procure por condicoes de pagamento
-   - "30 dias", "30dd", "30/60/90" -> condicoes_pagamento: "30 dias"
-   - "a vista", "avista" -> condicoes_pagamento: "a vista"
-   - "boleto", "pix", "cartao" -> inclua na condicao
-
-4. FRETE: Procure por informacoes de frete
-   - "frete gratis", "frete incluso", "CIF" -> frete_incluso: true
-   - "frete por conta", "FOB", "+ frete" -> frete_incluso: false
-   - "frete R$ 50" -> frete_valor: 50
-
-5. MARCA/PRODUTO: Procure por marcas ou especificacoes
-   - Nome de fabricantes, modelos, referencias
-
-6. IGNORE a parte do email que e citacao do email original (geralmente apos "---" ou ">")
+### O QUE IGNORAR
+- Citacoes do email original (apos "---" ou ">")
+- Texto que nao seja da resposta do fornecedor
 
 Responda APENAS com JSON valido:
 
 {{
-    "preco_unitario": <numero ou null>,
-    "preco_total": <numero ou null>,
-    "quantidade": <numero ou null>,
+    "itens": [
+        {{
+            "indice": 0,
+            "preco_unitario": <numero>,
+            "total": <numero ou null>,
+            "marca": "<texto ou null>"
+        }},
+        {{
+            "indice": 1,
+            "preco_unitario": <numero>,
+            "total": <numero ou null>,
+            "marca": "<texto ou null>"
+        }}
+    ],
+    "preco_total_proposta": <numero ou null>,
     "prazo_entrega_dias": <numero ou null>,
     "condicoes_pagamento": "<texto ou null>",
     "frete_incluso": <true/false/null>,
     "frete_valor": <numero ou null>,
-    "validade_proposta": "<texto ou null>",
-    "marca_produto": "<texto ou null>",
-    "observacoes": "<informacoes adicionais encontradas>",
+    "validade_proposta_dias": <numero ou null>,
+    "observacoes": "<informacoes adicionais>",
     "confianca_extracao": <0-100>
 }}
 
 IMPORTANTE:
-- NAO retorne null para preco se encontrar QUALQUER valor monetario no email
-- Se o email tiver algum conteudo de resposta do fornecedor, a confianca deve ser >= 50
+- O array "itens" DEVE conter um objeto para CADA item com preco encontrado
+- Se encontrar "Item 1: R$ 5,00" e "Item 2: R$ 6,00", retorne 2 objetos no array
+- Se encontrar apenas um preco geral, coloque-o como item unico com indice 0
+- NUNCA retorne itens vazio se houver QUALQUER valor monetario
 - Seja AGRESSIVO na extracao - e melhor extrair algo errado do que perder dados
 """
 

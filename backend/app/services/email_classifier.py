@@ -332,7 +332,8 @@ class EmailClassifier:
         Extrai texto E campos de formulario (AcroForm) de um arquivo PDF.
 
         IMPORTANTE: PDFs preenchíveis armazenam valores em campos de formulário,
-        não como texto visível. Esta função extrai AMBOS.
+        não como texto visível. Esta função extrai AMBOS e formata de maneira
+        estruturada para facilitar a análise pela IA.
 
         Args:
             pdf_bytes: Conteudo do PDF em bytes
@@ -342,6 +343,7 @@ class EmailClassifier:
         """
         try:
             import io
+            import re
 
             # Tentar usar PyPDF2/pypdf (preferido por suportar AcroForm)
             try:
@@ -353,7 +355,10 @@ class EmailClassifier:
                 try:
                     fields = reader.get_fields()
                     if fields:
-                        campos_formulario = "=== VALORES PREENCHIDOS NO FORMULARIO ===\n"
+                        # Separar campos por tipo para formatação estruturada
+                        itens_proposta = {}  # {indice: {preco_unit, total}}
+                        dados_gerais = {}  # prazo, condicoes, frete, etc.
+
                         for nome_campo, info_campo in fields.items():
                             # Extrair valor do campo (/V = Value)
                             valor = None
@@ -363,13 +368,57 @@ class EmailClassifier:
                                 valor = info_campo.value
 
                             if valor:
-                                # Limpar nome do campo para facilitar parsing
-                                nome_limpo = nome_campo.replace('_', ' ').replace('-', ' ')
-                                campos_formulario += f"{nome_limpo}: {valor}\n"
-                                print(f"[PDF] Campo encontrado: {nome_limpo} = {valor}")
+                                valor_str = str(valor).strip()
+                                print(f"[PDF] Campo encontrado: {nome_campo} = {valor_str}")
 
-                        campos_formulario += "=== FIM DOS CAMPOS DO FORMULARIO ===\n\n"
+                                # Identificar campos de itens (preco_unit_0, total_0, etc.)
+                                match_preco = re.match(r'preco_unit_(\d+)', nome_campo)
+                                match_total = re.match(r'total_(\d+)', nome_campo)
+
+                                if match_preco:
+                                    idx = int(match_preco.group(1))
+                                    if idx not in itens_proposta:
+                                        itens_proposta[idx] = {}
+                                    itens_proposta[idx]['preco_unitario'] = valor_str
+                                elif match_total:
+                                    idx = int(match_total.group(1))
+                                    if idx not in itens_proposta:
+                                        itens_proposta[idx] = {}
+                                    itens_proposta[idx]['total'] = valor_str
+                                else:
+                                    # Campo geral (prazo, condicoes, etc.)
+                                    dados_gerais[nome_campo] = valor_str
+
+                        # Formatar saída de maneira estruturada para a IA
+                        campos_formulario = "=== DADOS DA PROPOSTA EXTRAÍDOS DO PDF ===\n\n"
+
+                        if itens_proposta:
+                            campos_formulario += "PREÇOS POR ITEM:\n"
+                            for idx in sorted(itens_proposta.keys()):
+                                item_data = itens_proposta[idx]
+                                campos_formulario += f"  Item {idx + 1}:\n"
+                                if 'preco_unitario' in item_data:
+                                    campos_formulario += f"    - Preço Unitário: R$ {item_data['preco_unitario']}\n"
+                                if 'total' in item_data:
+                                    campos_formulario += f"    - Total: R$ {item_data['total']}\n"
+                            campos_formulario += "\n"
+
+                        if dados_gerais:
+                            campos_formulario += "DADOS GERAIS:\n"
+                            mapeamento_campos = {
+                                'prazo_entrega': 'Prazo de Entrega (dias)',
+                                'condicoes_pagamento': 'Condições de Pagamento',
+                                'frete': 'Frete',
+                                'validade': 'Validade da Proposta (dias)',
+                                'observacoes': 'Observações'
+                            }
+                            for campo, valor in dados_gerais.items():
+                                nome_amigavel = mapeamento_campos.get(campo, campo)
+                                campos_formulario += f"  - {nome_amigavel}: {valor}\n"
+
+                        campos_formulario += "\n=== FIM DOS DADOS DO PDF ===\n\n"
                         print(f"[PDF] Total de campos extraidos: {len(fields)}")
+                        print(f"[PDF] Itens com preço: {len(itens_proposta)}")
                 except Exception as e:
                     print(f"[PDF] Erro ao extrair campos AcroForm: {e}")
 
@@ -797,7 +846,7 @@ Responda APENAS com JSON no formato:
             return None
 
         try:
-            # Atualizar dados da proposta
+            # Atualizar dados gerais da proposta
             if dados_extraidos.get('prazo_entrega_dias') is not None:
                 proposta.prazo_entrega = dados_extraidos['prazo_entrega_dias']
 
@@ -813,63 +862,97 @@ Responda APENAS com JSON no formato:
             if dados_extraidos.get('frete_valor') is not None:
                 proposta.frete_valor = dados_extraidos['frete_valor']
 
-            if dados_extraidos.get('validade_proposta'):
-                from datetime import datetime
+            if dados_extraidos.get('validade_proposta_dias') is not None:
+                from datetime import datetime, timedelta
                 try:
-                    proposta.validade_proposta = datetime.strptime(
-                        dados_extraidos['validade_proposta'], '%Y-%m-%d'
-                    )
+                    dias = int(dados_extraidos['validade_proposta_dias'])
+                    proposta.validade_proposta = datetime.utcnow() + timedelta(days=dias)
                 except:
                     pass
 
-            # Se tiver preco, atualizar valor total e criar/atualizar ItemProposta
-            preco_total = dados_extraidos.get('preco_total')
-            preco_unitario = dados_extraidos.get('preco_unitario')
+            # Atualizar valor total
+            if dados_extraidos.get('preco_total_proposta'):
+                proposta.valor_total = dados_extraidos['preco_total_proposta']
 
-            if preco_total:
-                proposta.valor_total = preco_total
-            elif preco_unitario and dados_extraidos.get('quantidade'):
-                proposta.valor_total = preco_unitario * dados_extraidos['quantidade']
+            # Buscar TODOS os itens da solicitacao (na ordem)
+            itens_solicitacao = db.query(ItemSolicitacao).filter(
+                ItemSolicitacao.solicitacao_id == solicitacao_id
+            ).order_by(ItemSolicitacao.id).all()
 
-            # Criar ItemProposta para TODOS os itens da solicitacao
-            if preco_unitario:
-                # Buscar TODOS os itens da solicitacao
-                itens_solicitacao = db.query(ItemSolicitacao).filter(
-                    ItemSolicitacao.solicitacao_id == solicitacao_id
-                ).all()
+            # Extrair precos por item do novo formato
+            itens_extraidos = dados_extraidos.get('itens', [])
 
-                for item_solicitacao in itens_solicitacao:
-                    # Verificar se ja existe ItemProposta para este item
-                    item_proposta = db.query(ItemProposta).filter(
-                        ItemProposta.proposta_id == proposta.id,
-                        ItemProposta.item_solicitacao_id == item_solicitacao.id
-                    ).first()
+            # Compatibilidade com formato antigo (preco_unitario unico)
+            preco_unitario_geral = dados_extraidos.get('preco_unitario')
+            marca_geral = dados_extraidos.get('marca_produto')
 
-                    if item_proposta:
-                        # Atualizar existente
-                        item_proposta.preco_unitario = preco_unitario
-                        item_proposta.preco_final = preco_unitario
-                        if dados_extraidos.get('marca_produto'):
-                            item_proposta.marca_oferecida = dados_extraidos['marca_produto']
-                    else:
-                        # Criar novo para cada item da solicitacao
-                        item_proposta = ItemProposta(
-                            proposta_id=proposta.id,
-                            item_solicitacao_id=item_solicitacao.id,
-                            preco_unitario=preco_unitario,
-                            preco_final=preco_unitario,
-                            quantidade_disponivel=item_solicitacao.quantidade,  # Usar qtd da solicitacao
-                            marca_oferecida=dados_extraidos.get('marca_produto'),
-                            tenant_id=tenant_id
-                        )
-                        db.add(item_proposta)
+            print(f"[CLASSIFICADOR] Itens da solicitacao: {len(itens_solicitacao)}, Itens extraidos: {len(itens_extraidos)}")
 
-            # Status ja foi atualizado para RECEBIDA em _marcar_proposta_recebida
+            # Processar cada item da solicitacao
+            for idx, item_solicitacao in enumerate(itens_solicitacao):
+                # Buscar preco especifico para este item (pelo indice)
+                preco_item = None
+                marca_item = None
+
+                # Primeiro, tentar encontrar item extraido pelo indice
+                for item_ext in itens_extraidos:
+                    if item_ext.get('indice') == idx:
+                        preco_item = item_ext.get('preco_unitario')
+                        marca_item = item_ext.get('marca')
+                        print(f"[CLASSIFICADOR] Item {idx}: preco={preco_item}, marca={marca_item}")
+                        break
+
+                # Se nao encontrou por indice, usar preco geral (formato antigo)
+                if preco_item is None and preco_unitario_geral:
+                    preco_item = preco_unitario_geral
+                    marca_item = marca_geral
+                    print(f"[CLASSIFICADOR] Item {idx}: usando preco geral={preco_item}")
+
+                # Se ainda nao tem preco, pular
+                if preco_item is None:
+                    print(f"[CLASSIFICADOR] Item {idx}: sem preco encontrado, pulando")
+                    continue
+
+                # Verificar se ja existe ItemProposta
+                item_proposta = db.query(ItemProposta).filter(
+                    ItemProposta.proposta_id == proposta.id,
+                    ItemProposta.item_solicitacao_id == item_solicitacao.id
+                ).first()
+
+                if item_proposta:
+                    # Atualizar existente
+                    item_proposta.preco_unitario = preco_item
+                    item_proposta.preco_final = preco_item
+                    if marca_item:
+                        item_proposta.marca_oferecida = marca_item
+                else:
+                    # Criar novo
+                    item_proposta = ItemProposta(
+                        proposta_id=proposta.id,
+                        item_solicitacao_id=item_solicitacao.id,
+                        preco_unitario=preco_item,
+                        preco_final=preco_item,
+                        quantidade_disponivel=item_solicitacao.quantidade,
+                        marca_oferecida=marca_item,
+                        tenant_id=tenant_id
+                    )
+                    db.add(item_proposta)
+
+            # Calcular valor total se nao foi fornecido
+            if not proposta.valor_total:
+                total = sum(
+                    (item.get('preco_unitario', 0) or 0) * (itens_solicitacao[item.get('indice', 0)].quantidade if item.get('indice', 0) < len(itens_solicitacao) else 1)
+                    for item in itens_extraidos
+                    if item.get('preco_unitario')
+                )
+                if total > 0:
+                    proposta.valor_total = total
+
             db.flush()
 
-            print(f"[CLASSIFICADOR] Proposta {proposta.id} atualizada com dados do email: "
+            print(f"[CLASSIFICADOR] Proposta {proposta.id} atualizada: "
                   f"valor={proposta.valor_total}, prazo={proposta.prazo_entrega}, "
-                  f"pagamento={proposta.condicoes_pagamento}")
+                  f"pagamento={proposta.condicoes_pagamento}, itens_criados={len(itens_solicitacao)}")
 
             return proposta.id
 
