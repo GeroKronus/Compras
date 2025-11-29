@@ -637,7 +637,7 @@ def escolher_vencedor(
 
 # ============ MAPA COMPARATIVO ============
 
-@router.get("/solicitacoes/{solicitacao_id}/mapa-comparativo", response_model=MapaComparativoResponse)
+@router.get("/solicitacoes/{solicitacao_id}/mapa-comparativo")
 def obter_mapa_comparativo(
     solicitacao_id: int,
     db: Session = Depends(get_db),
@@ -647,10 +647,10 @@ def obter_mapa_comparativo(
     solicitacao = get_by_id(db, SolicitacaoCotacao, solicitacao_id, tenant_id, error_message="Solicitacao nao encontrada")
 
     itens_solicitacao = db.query(ItemSolicitacao).filter(ItemSolicitacao.solicitacao_id == solicitacao_id).all()
+    # Buscar propostas pela solicitacao (tenant ja validado via solicitacao)
     propostas = db.query(PropostaFornecedor).filter(
         PropostaFornecedor.solicitacao_id == solicitacao_id,
-        PropostaFornecedor.status.in_([StatusProposta.RECEBIDA, StatusProposta.VENCEDORA]),
-        PropostaFornecedor.tenant_id == tenant_id
+        PropostaFornecedor.status.in_([StatusProposta.RECEBIDA, StatusProposta.VENCEDORA])
     ).all()
 
     itens_mapa = []
