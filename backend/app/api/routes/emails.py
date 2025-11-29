@@ -459,15 +459,22 @@ class TesteEmailRequest(BaseModel):
 @router.get("/config/status")
 def verificar_config_email():
     """
-    Verificar se o servico de email esta configurado.
+    Verificar se o servico de email e IA estao configurados.
     """
+    import os
+    chave_ia = os.environ.get('ANTHROPIC_API_KEY', '')
+
     return {
         "configurado": email_service.is_configured,
         "smtp_host": settings.SMTP_HOST,
         "smtp_port": settings.SMTP_PORT,
         "smtp_user_configurado": bool(settings.SMTP_USER),
         "smtp_password_configurado": bool(settings.SMTP_PASSWORD),
-        "email_from": settings.EMAIL_FROM or "(usa SMTP_USER)"
+        "email_from": settings.EMAIL_FROM or "(usa SMTP_USER)",
+        "ia_chave_configurada": bool(chave_ia),
+        "ia_chave_inicio": chave_ia[:25] if chave_ia else "(vazio)",
+        "ia_chave_fim": chave_ia[-15:] if chave_ia else "(vazio)",
+        "ia_chave_tamanho": len(chave_ia)
     }
 
 
