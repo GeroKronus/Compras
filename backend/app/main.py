@@ -42,7 +42,7 @@ def health_check():
 @app.get("/api/v1/version")
 def get_api_version():
     """Retorna versão do backend para verificar deploy"""
-    return {"version": "1.0069", "status": "ok"}
+    return {"version": "1.0070", "status": "ok"}
 
 # Debug: testar pypdf
 @app.get("/debug/pypdf")
@@ -184,6 +184,21 @@ def reprocessar_email(email_id: int):
                         Fornecedor.tenant_id == email_proc.tenant_id
                     ).first()
 
+                    # Se não encontrou por email, tentar buscar pelo nome no PDF
+                    if not fornecedor:
+                        obs = dados_extraidos.get('observacoes', '')
+                        # Extrair nome do fornecedor das observações
+                        import re
+                        forn_match = re.search(r'[Ff]ornecedor[:\s]+(\w+)', obs)
+                        if forn_match:
+                            nome_fornecedor = forn_match.group(1)
+                            fornecedor = db.query(Fornecedor).filter(
+                                Fornecedor.razao_social.ilike(f"%{nome_fornecedor}%"),
+                                Fornecedor.tenant_id == email_proc.tenant_id
+                            ).first()
+                            if fornecedor:
+                                resultado["etapas"].append(f"fornecedor encontrado por nome: {nome_fornecedor}")
+
                     if fornecedor:
                         email_proc.fornecedor_id = fornecedor.id
                         resultado["fornecedor_id"] = fornecedor.id
@@ -310,6 +325,29 @@ GABARITO = {
 def get_gabarito():
     """Retorna valores esperados (gabarito) dos PDFs de teste."""
     return GABARITO
+
+
+@app.get("/debug/fornecedores/{tenant_id}")
+def debug_fornecedores(tenant_id: int):
+    """Lista fornecedores de um tenant para debug."""
+    from app.database import SessionLocal
+    from app.models.fornecedor import Fornecedor
+
+    db = SessionLocal()
+    fornecedores = db.query(Fornecedor).filter(
+        Fornecedor.tenant_id == tenant_id
+    ).all()
+
+    resultado = []
+    for f in fornecedores:
+        resultado.append({
+            "id": f.id,
+            "razao_social": f.razao_social,
+            "email_principal": f.email_principal
+        })
+
+    db.close()
+    return resultado
 
 
 @app.post("/debug/limpar-propostas/{solicitacao_id}")
