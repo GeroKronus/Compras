@@ -162,28 +162,32 @@ def diagnostico_cotacoes():
     """
     try:
         from app.database import SessionLocal
+        from sqlalchemy import text
         db = SessionLocal()
         try:
-            from app.models.cotacao import SolicitacaoCotacao, PropostaFornecedor
+            dados = {"solicitacoes": [], "propostas": [], "contagens": {}}
 
-            dados = {"solicitacoes": [], "propostas": []}
+            # Contagem direta via SQL
+            count_sol = db.execute(text("SELECT COUNT(*) FROM solicitacoes_cotacao")).scalar()
+            count_prop = db.execute(text("SELECT COUNT(*) FROM propostas_fornecedor")).scalar()
+            dados["contagens"] = {"solicitacoes": count_sol, "propostas": count_prop}
 
-            # Solicitações via ORM
-            solicitacoes = db.query(SolicitacaoCotacao).all()
-            for s in solicitacoes:
+            # Solicitações via SQL
+            sol_rows = db.execute(text("SELECT id, numero, titulo, status, tenant_id FROM solicitacoes_cotacao")).fetchall()
+            for row in sol_rows:
                 dados["solicitacoes"].append({
-                    "id": s.id, "numero": s.numero, "titulo": s.titulo,
-                    "status": s.status.value if s.status else None, "tenant_id": s.tenant_id
+                    "id": row[0], "numero": row[1], "titulo": row[2],
+                    "status": str(row[3]) if row[3] else None, "tenant_id": row[4]
                 })
 
-            # Propostas via ORM
-            propostas = db.query(PropostaFornecedor).all()
-            for p in propostas:
+            # Propostas via SQL
+            prop_rows = db.execute(text("SELECT id, solicitacao_id, fornecedor_id, status, valor_total, tenant_id FROM propostas_fornecedor")).fetchall()
+            for row in prop_rows:
                 dados["propostas"].append({
-                    "id": p.id, "solicitacao_id": p.solicitacao_id, "fornecedor_id": p.fornecedor_id,
-                    "status": p.status.value if p.status else None,
-                    "valor_total": float(p.valor_total) if p.valor_total else None,
-                    "tenant_id": p.tenant_id
+                    "id": row[0], "solicitacao_id": row[1], "fornecedor_id": row[2],
+                    "status": str(row[3]) if row[3] else None,
+                    "valor_total": float(row[4]) if row[4] else None,
+                    "tenant_id": row[5]
                 })
 
             return dados
