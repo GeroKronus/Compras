@@ -479,11 +479,13 @@ def verificar_config_ia():
     """
     from app.services.ai_service import ai_service
 
+    chave = getattr(settings, 'ANTHROPIC_API_KEY', None) or ""
+
     resultado = {
-        "anthropic_configurado": bool(settings.ANTHROPIC_API_KEY),
-        "chave_inicio": settings.ANTHROPIC_API_KEY[:20] + "..." if settings.ANTHROPIC_API_KEY else None,
-        "chave_fim": "..." + settings.ANTHROPIC_API_KEY[-10:] if settings.ANTHROPIC_API_KEY else None,
-        "chave_tamanho": len(settings.ANTHROPIC_API_KEY) if settings.ANTHROPIC_API_KEY else 0,
+        "anthropic_configurado": bool(chave),
+        "chave_inicio": chave[:20] + "..." if chave else None,
+        "chave_fim": "..." + chave[-10:] if chave else None,
+        "chave_tamanho": len(chave) if chave else 0,
         "ai_service_disponivel": ai_service.is_available,
         "teste_conexao": None,
         "erro": None
