@@ -201,9 +201,11 @@ Analise todas as propostas considerando os criterios de avaliacao e responda APE
             return {"error": "API da Anthropic nao configurada"}
 
         # Combinar corpo do email com anexo se houver
-        conteudo_completo = corpo_email or ""
+        # IMPORTANTE: PDF vem PRIMEIRO para dar prioridade na analise
+        conteudo_completo = ""
         if conteudo_anexo:
-            conteudo_completo += f"\n\n=== CONTEUDO DO ANEXO PDF ===\n{conteudo_anexo}"
+            conteudo_completo = f"=== DADOS DO ANEXO PDF (PRIORIDADE MAXIMA) ===\n{conteudo_anexo}\n\n=== FIM DO PDF ===\n\n"
+        conteudo_completo += f"=== CORPO DO EMAIL ===\n{corpo_email or '(vazio)'}"
 
         prompt = f"""
 VOCE E UM ESPECIALISTA EM EXTRAIR DADOS DE PROPOSTAS COMERCIAIS.
