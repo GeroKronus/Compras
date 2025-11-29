@@ -205,29 +205,28 @@ Analise todas as propostas considerando os criterios de avaliacao e responda APE
         conteudo_completo = ""
         if conteudo_anexo:
             conteudo_completo = f"=== DADOS DO ANEXO PDF (PRIORIDADE MAXIMA) ===\n{conteudo_anexo}\n\n=== FIM DO PDF ===\n\n"
+            print(f"[AI_SERVICE] PDF encontrado! Tamanho: {len(conteudo_anexo)} chars")
+            print(f"[AI_SERVICE] PDF preview: {conteudo_anexo[:500]}")
+        else:
+            print(f"[AI_SERVICE] Sem anexo PDF")
         conteudo_completo += f"=== CORPO DO EMAIL ===\n{corpo_email or '(vazio)'}"
 
         prompt = f"""
 VOCE E UM ESPECIALISTA EM EXTRAIR DADOS DE PROPOSTAS COMERCIAIS.
 
-Este email e uma RESPOSTA de um FORNECEDOR a uma solicitacao de cotacao.
-PRESUMA que este email CONTEM uma proposta comercial, mesmo que esteja mal formatado.
+## REGRA PRINCIPAL - LEIA COM ATENCAO!
+Se voce encontrar uma secao "DADOS DO ANEXO PDF" ou "PRECOS POR ITEM" no inicio do conteudo:
+- Esses dados SAO A RESPOSTA DO FORNECEDOR (o fornecedor preencheu o PDF)
+- EXTRAIA os precos que aparecem la, NAO ignore!
+- Cada "Item 1", "Item 2" corresponde a um item da proposta
+- "Preco Unitario: R$ X,XX" = use esse valor!
 
-## PRIORIDADE DE DADOS (MUITO IMPORTANTE!)
-Se houver uma secao "CONTEUDO DO ANEXO PDF" ou "DADOS DA PROPOSTA EXTRAÍDOS DO PDF":
-- SEMPRE use os dados do PDF como fonte PRINCIPAL
-- Os dados do PDF sao MAIS CONFIAVEIS que o corpo do email
-- IGNORE citacoes do email original (texto apos "---" ou ">")
-- O PDF contem os precos REAIS preenchidos pelo fornecedor
+## O QUE IGNORAR
+- Textos com ">" no inicio (citacoes do email original)
+- Secoes "ITENS SOLICITADOS" ou "PREENCHA SUA PROPOSTA" (sao do formulario vazio)
+- Qualquer texto que diga "Gostaríamos de solicitar cotação" (e a solicitacao, nao a resposta)
 
-O fornecedor pode ter respondido de diversas formas:
-- Anexando um PDF com a proposta preenchida (MAIS CONFIAVEL)
-- Digitando os valores diretamente no email
-- Escrevendo de forma informal ("te faço por 50 reais", "entrego semana que vem")
-- Usando abreviacoes ("pgto 30dd", "ent. imediata", "R$15/un")
-
-SUA MISSAO: Encontrar e extrair TODOS os dados comerciais, ESPECIALMENTE preços por item.
-PRIORIZE os dados do PDF se houver!
+SUA MISSAO: Extrair os PRECOS preenchidos pelo fornecedor no PDF anexo.
 
 ## CONTEUDO DO EMAIL E ANEXOS
 {conteudo_completo}
