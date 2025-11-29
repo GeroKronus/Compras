@@ -715,6 +715,7 @@ Responda APENAS com JSON no formato:
     ) -> Optional[int]:
         """
         Marca uma proposta como RECEBIDA quando um email de resposta e identificado.
+        Se a proposta nao existir, CRIA uma nova proposta.
         Isso acontece ANTES da extracao de dados, garantindo que a proposta
         seja marcada mesmo que a IA nao consiga extrair os dados.
 
@@ -725,7 +726,7 @@ Responda APENAS com JSON no formato:
             fornecedor_id: ID do fornecedor
 
         Returns:
-            ID da proposta ou None se nao encontrada
+            ID da proposta ou None se erro
         """
         # Buscar proposta existente
         proposta = db.query(PropostaFornecedor).filter(
@@ -734,13 +735,22 @@ Responda APENAS com JSON no formato:
             PropostaFornecedor.tenant_id == tenant_id
         ).first()
 
-        if not proposta:
-            print(f"[CLASSIFICADOR] Proposta nao encontrada para solicitacao={solicitacao_id}, fornecedor={fornecedor_id}")
-            return None
-
         try:
-            # Marcar como RECEBIDA (se ainda nao estiver)
-            if proposta.status == StatusProposta.PENDENTE:
+            if not proposta:
+                # CRIAR nova proposta se nao existir
+                print(f"[CLASSIFICADOR] Criando proposta para solicitacao={solicitacao_id}, fornecedor={fornecedor_id}")
+                proposta = PropostaFornecedor(
+                    solicitacao_id=solicitacao_id,
+                    fornecedor_id=fornecedor_id,
+                    tenant_id=tenant_id,
+                    status=StatusProposta.RECEBIDA,
+                    data_recebimento=datetime.utcnow()
+                )
+                db.add(proposta)
+                db.flush()
+                print(f"[CLASSIFICADOR] Proposta {proposta.id} CRIADA como RECEBIDA")
+            elif proposta.status == StatusProposta.PENDENTE:
+                # Marcar como RECEBIDA (se ainda nao estiver)
                 proposta.status = StatusProposta.RECEBIDA
                 proposta.data_recebimento = datetime.utcnow()
                 db.flush()
@@ -749,7 +759,7 @@ Responda APENAS com JSON no formato:
             return proposta.id
 
         except Exception as e:
-            print(f"[CLASSIFICADOR] Erro ao marcar proposta como recebida: {e}")
+            print(f"[CLASSIFICADOR] Erro ao criar/marcar proposta como recebida: {e}")
             return None
 
     def _atualizar_proposta_com_dados(
