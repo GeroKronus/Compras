@@ -885,7 +885,10 @@ def _enrich_solicitacao_response(solicitacao: SolicitacaoCotacao, db: Session) -
             "produto_nome": produto.nome if produto else None, "produto_codigo": produto.codigo if produto else None
         })
 
-    total_propostas = db.query(PropostaFornecedor).filter(PropostaFornecedor.solicitacao_id == solicitacao.id).count()
+    total_propostas = db.query(PropostaFornecedor).filter(
+        PropostaFornecedor.solicitacao_id == solicitacao.id,
+        PropostaFornecedor.tenant_id == solicitacao.tenant_id
+    ).count()
 
     return {
         "id": solicitacao.id, "numero": solicitacao.numero, "titulo": solicitacao.titulo,

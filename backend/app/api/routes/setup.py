@@ -217,3 +217,62 @@ def diagnostico_cotacoes(db: Session = Depends(get_db)):
     except Exception as e:
         import traceback
         return {"erro": str(e), "tipo": type(e).__name__, "traceback": traceback.format_exc()}
+
+
+@router.post("/corrigir-tenant-ids")
+def corrigir_tenant_ids(db: Session = Depends(get_db)):
+    """
+    Endpoint para corrigir tenant_ids das propostas e itens.
+    Sincroniza o tenant_id das propostas com o tenant_id da solicitação correspondente.
+    SEM AUTENTICAÇÃO - apenas para debug/correção.
+    """
+    try:
+        from sqlalchemy import text
+
+        correcoes = []
+
+        # 1. Corrigir propostas: tenant_id deve ser igual ao da solicitação
+        update_propostas = text("""
+            UPDATE propostas_fornecedor p
+            SET tenant_id = s.tenant_id
+            FROM solicitacoes_cotacao s
+            WHERE p.solicitacao_id = s.id
+            AND p.tenant_id != s.tenant_id
+        """)
+        result1 = db.execute(update_propostas)
+        correcoes.append(f"Propostas corrigidas: {result1.rowcount}")
+
+        # 2. Corrigir itens_proposta: tenant_id deve ser igual ao da proposta
+        update_itens = text("""
+            UPDATE itens_proposta ip
+            SET tenant_id = p.tenant_id
+            FROM propostas_fornecedor p
+            WHERE ip.proposta_id = p.id
+            AND ip.tenant_id != p.tenant_id
+        """)
+        result2 = db.execute(update_itens)
+        correcoes.append(f"Itens proposta corrigidos: {result2.rowcount}")
+
+        # 3. Corrigir itens_solicitacao: tenant_id deve ser igual ao da solicitação
+        update_itens_sol = text("""
+            UPDATE itens_solicitacao i
+            SET tenant_id = s.tenant_id
+            FROM solicitacoes_cotacao s
+            WHERE i.solicitacao_id = s.id
+            AND i.tenant_id != s.tenant_id
+        """)
+        result3 = db.execute(update_itens_sol)
+        correcoes.append(f"Itens solicitacao corrigidos: {result3.rowcount}")
+
+        db.commit()
+
+        return {
+            "sucesso": True,
+            "correcoes": correcoes,
+            "mensagem": "Tenant IDs sincronizados com sucesso"
+        }
+
+    except Exception as e:
+        db.rollback()
+        import traceback
+        return {"erro": str(e), "tipo": type(e).__name__, "traceback": traceback.format_exc()}
