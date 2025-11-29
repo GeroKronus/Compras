@@ -12,7 +12,7 @@ from app.config import settings
 class AIService:
     """Servico para analise de propostas com IA"""
 
-    MODEL = "claude-sonnet-4-20250514"
+    MODEL = "claude-3-5-sonnet-20241022"
 
     def __init__(self):
         self.client = None
@@ -66,7 +66,7 @@ class AIService:
 
         try:
             response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model=self.MODEL,
                 max_tokens=2000,
                 messages=[
                     {
@@ -275,7 +275,7 @@ IMPORTANTE:
 
         try:
             response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model=self.MODEL,
                 max_tokens=1000,
                 messages=[{"role": "user", "content": prompt}],
                 system="Voce e um assistente AGRESSIVO na extracao de dados comerciais. Sua missao e encontrar precos, prazos e condicoes em qualquer formato. NUNCA diga que nao encontrou dados se houver qualquer indicacao de valores no texto."

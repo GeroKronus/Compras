@@ -512,7 +512,7 @@ def testar_conexao_ia():
 
     try:
         response = ai_service.client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=ai_service.MODEL,
             max_tokens=10,
             messages=[{"role": "user", "content": "Diga apenas: OK"}]
         )
