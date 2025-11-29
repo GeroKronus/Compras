@@ -27,7 +27,7 @@ router = APIRouter()
 @router.get("/version")
 def get_version():
     """Retorna versão do backend"""
-    return {"version": "1.0041", "endpoint": "setup/version"}
+    return {"version": "1.0042", "endpoint": "setup/version"}
 
 
 class SetupRequest(BaseModel):
@@ -767,23 +767,32 @@ def processar_emails_manual(tenant_id: int, dias_atras: int = 30):
     Processa emails manualmente sem aguardar o job automático.
     SEM AUTENTICAÇÃO - apenas para debug/teste.
     """
+    import traceback
+    db = None
     try:
         from app.database import SessionLocal
-        from app.services.email_classifier import EmailClassifier
-
         db = SessionLocal()
-        try:
-            classifier = EmailClassifier()
-            resultado = classifier.processar_emails_novos(db, tenant_id, dias_atras)
-
-            return {
-                "sucesso": True,
-                "tenant_id": tenant_id,
-                "dias_atras": dias_atras,
-                "resultado": resultado
-            }
-        finally:
-            db.close()
     except Exception as e:
-        import traceback
-        return {"erro": str(e), "traceback": traceback.format_exc()}
+        return {"erro": f"Erro ao criar sessao: {e}", "traceback": traceback.format_exc()}
+
+    try:
+        from app.services.email_classifier import EmailClassifier
+        classifier = EmailClassifier()
+    except Exception as e:
+        if db:
+            db.close()
+        return {"erro": f"Erro ao criar classifier: {e}", "traceback": traceback.format_exc()}
+
+    try:
+        resultado = classifier.processar_emails_novos(db, tenant_id, dias_atras)
+        return {
+            "sucesso": True,
+            "tenant_id": tenant_id,
+            "dias_atras": dias_atras,
+            "resultado": resultado
+        }
+    except Exception as e:
+        return {"erro": f"Erro ao processar: {e}", "traceback": traceback.format_exc()}
+    finally:
+        if db:
+            db.close()
