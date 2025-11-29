@@ -437,11 +437,11 @@ export default function Propostas() {
                         >
                           <EyeIcon className="h-5 w-5" />
                         </button>
-                        {proposta.status === 'PENDENTE' && (
+                        {(proposta.status === 'PENDENTE' || proposta.status === 'RECEBIDA') && (
                           <button
                             onClick={() => openEditModal(proposta)}
                             className="text-blue-600 hover:text-blue-900"
-                            title="Registrar Precos"
+                            title="Editar Proposta"
                           >
                             <CurrencyDollarIcon className="h-5 w-5" />
                           </button>
