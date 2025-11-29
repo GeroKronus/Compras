@@ -42,7 +42,7 @@ def health_check():
 @app.get("/api/v1/version")
 def get_api_version():
     """Retorna versão do backend para verificar deploy"""
-    return {"version": "1.0065", "status": "ok"}
+    return {"version": "1.0066", "status": "ok"}
 
 # Debug: testar pypdf
 @app.get("/debug/pypdf")
@@ -280,6 +280,272 @@ def reprocessar_email(email_id: int):
         resultado["traceback"] = traceback.format_exc()
 
     return resultado
+
+# Gabarito de valores esperados dos PDFs
+GABARITO = {
+    "kronus": {
+        "fornecedor": "Kronus",
+        "itens": [
+            {"produto": "Avental de Raspa", "qtd": 4, "preco_unitario": 5.00, "total": 20.00},
+            {"produto": "Disco Diamantado 110mm", "qtd": 5, "preco_unitario": 5.00, "total": 25.00}
+        ],
+        "valor_total": 45.00,
+        "prazo_entrega_dias": 10,
+        "condicoes_pagamento": "a vista"
+    },
+    "picstone": {
+        "fornecedor": "Picstone",
+        "itens": [
+            {"produto": "Avental de Raspa", "qtd": 4, "preco_unitario": 6.00, "total": 24.00},
+            {"produto": "Disco Diamantado 110mm", "qtd": 5, "preco_unitario": 5.00, "total": 25.00}
+        ],
+        "valor_total": 49.00,
+        "prazo_entrega_dias": 15,
+        "condicoes_pagamento": "30 dias"
+    }
+}
+
+@app.get("/debug/gabarito")
+def get_gabarito():
+    """Retorna valores esperados (gabarito) dos PDFs de teste."""
+    return GABARITO
+
+
+@app.post("/debug/limpar-propostas/{solicitacao_id}")
+def limpar_propostas(solicitacao_id: int):
+    """Limpa todas as propostas de uma solicitação (mantém a solicitação e emails)."""
+    import traceback
+    resultado = {"solicitacao_id": solicitacao_id, "etapas": []}
+
+    try:
+        from app.database import SessionLocal
+        from app.models.cotacao import SolicitacaoCotacao, PropostaFornecedor, ItemProposta
+        from app.models.email_processado import EmailProcessado
+
+        db = SessionLocal()
+
+        # Verificar solicitação
+        solicitacao = db.query(SolicitacaoCotacao).filter(
+            SolicitacaoCotacao.id == solicitacao_id
+        ).first()
+
+        if not solicitacao:
+            db.close()
+            resultado["erro"] = "Solicitação não encontrada"
+            return resultado
+
+        resultado["numero"] = solicitacao.numero
+        resultado["etapas"].append(f"solicitação encontrada: {solicitacao.numero}")
+
+        # Buscar propostas
+        propostas = db.query(PropostaFornecedor).filter(
+            PropostaFornecedor.solicitacao_id == solicitacao_id
+        ).all()
+
+        resultado["propostas_encontradas"] = len(propostas)
+
+        # Deletar itens das propostas
+        itens_deletados = 0
+        for proposta in propostas:
+            itens = db.query(ItemProposta).filter(
+                ItemProposta.proposta_id == proposta.id
+            ).all()
+            for item in itens:
+                db.delete(item)
+                itens_deletados += 1
+
+        resultado["itens_deletados"] = itens_deletados
+        resultado["etapas"].append(f"itens deletados: {itens_deletados}")
+
+        # Deletar propostas
+        for proposta in propostas:
+            db.delete(proposta)
+
+        resultado["propostas_deletadas"] = len(propostas)
+        resultado["etapas"].append(f"propostas deletadas: {len(propostas)}")
+
+        # Resetar emails processados (marcar como pendente novamente)
+        emails = db.query(EmailProcessado).filter(
+            EmailProcessado.solicitacao_id == solicitacao_id
+        ).all()
+
+        for email_proc in emails:
+            email_proc.status = "pendente"
+            email_proc.proposta_id = None
+            email_proc.dados_extraidos = None
+            email_proc.data_processamento = None
+
+        resultado["emails_resetados"] = len(emails)
+        resultado["etapas"].append(f"emails resetados: {len(emails)}")
+
+        db.commit()
+        db.close()
+
+        resultado["sucesso"] = True
+        resultado["etapas"].append("banco limpo com sucesso")
+
+    except Exception as e:
+        resultado["erro"] = str(e)
+        resultado["traceback"] = traceback.format_exc()
+
+    return resultado
+
+
+@app.post("/debug/teste-extracao/{solicitacao_id}")
+def teste_extracao(solicitacao_id: int):
+    """
+    Executa ciclo completo de teste:
+    1. Limpa propostas da solicitação
+    2. Reprocessa emails com PDF
+    3. Compara resultados com gabarito
+    """
+    import traceback
+    resultado = {
+        "solicitacao_id": solicitacao_id,
+        "ciclo": [],
+        "resultados": {},
+        "comparacao": [],
+        "confiabilidade": {}
+    }
+
+    try:
+        # Passo 1: Limpar propostas
+        resultado["ciclo"].append("limpando propostas...")
+        limpeza = limpar_propostas(solicitacao_id)
+        resultado["limpeza"] = limpeza
+
+        if not limpeza.get("sucesso"):
+            resultado["erro"] = "Falha na limpeza"
+            return resultado
+
+        resultado["ciclo"].append(f"limpeza OK - {limpeza.get('propostas_deletadas', 0)} propostas removidas")
+
+        # Passo 2: Buscar emails para reprocessar
+        from app.database import SessionLocal
+        from app.models.email_processado import EmailProcessado
+        from app.models.cotacao import SolicitacaoCotacao
+
+        db = SessionLocal()
+
+        solicitacao = db.query(SolicitacaoCotacao).filter(
+            SolicitacaoCotacao.id == solicitacao_id
+        ).first()
+
+        if not solicitacao:
+            db.close()
+            resultado["erro"] = "Solicitação não encontrada"
+            return resultado
+
+        # Buscar emails com o número da solicitação no assunto
+        import re
+        emails_proc = db.query(EmailProcessado).filter(
+            EmailProcessado.assunto.like(f"%{solicitacao.numero}%"),
+            EmailProcessado.tenant_id == solicitacao.tenant_id
+        ).all()
+
+        resultado["ciclo"].append(f"encontrados {len(emails_proc)} emails para processar")
+        db.close()
+
+        # Passo 3: Reprocessar cada email
+        for email_proc in emails_proc:
+            resultado["ciclo"].append(f"processando email {email_proc.id} ({email_proc.remetente})...")
+            reprocessamento = reprocessar_email(email_proc.id)
+
+            # Identificar fornecedor pelo remetente
+            remetente = email_proc.remetente.lower()
+            fornecedor_key = None
+            if "kronus" in remetente or "isidorio" in remetente:
+                fornecedor_key = "kronus"
+            elif "picstone" in remetente:
+                fornecedor_key = "picstone"
+
+            resultado["resultados"][fornecedor_key or email_proc.remetente] = {
+                "email_id": email_proc.id,
+                "remetente": email_proc.remetente,
+                "dados_extraidos": reprocessamento.get("dados_extraidos"),
+                "valor_total_calculado": reprocessamento.get("valor_total"),
+                "sucesso": reprocessamento.get("sucesso", False),
+                "etapas": reprocessamento.get("etapas", [])
+            }
+
+            resultado["ciclo"].append(f"email {email_proc.id} processado - sucesso: {reprocessamento.get('sucesso')}")
+
+        # Passo 4: Comparar com gabarito
+        for fornecedor_key, esperado in GABARITO.items():
+            if fornecedor_key in resultado["resultados"]:
+                extraido = resultado["resultados"][fornecedor_key]
+                dados = extraido.get("dados_extraidos", {})
+
+                comp = {
+                    "fornecedor": fornecedor_key,
+                    "itens_corretos": True,
+                    "detalhes": []
+                }
+
+                # Comparar itens
+                itens_ext = dados.get("itens", [])
+                for idx, item_esp in enumerate(esperado["itens"]):
+                    if idx < len(itens_ext):
+                        preco_ext = itens_ext[idx].get("preco_unitario", 0)
+                        preco_esp = item_esp["preco_unitario"]
+                        diff = abs(preco_ext - preco_esp)
+                        correto = diff < 0.01
+
+                        comp["detalhes"].append({
+                            "item": item_esp["produto"],
+                            "esperado": preco_esp,
+                            "extraido": preco_ext,
+                            "correto": correto,
+                            "diferenca": diff
+                        })
+
+                        if not correto:
+                            comp["itens_corretos"] = False
+                    else:
+                        comp["detalhes"].append({
+                            "item": item_esp["produto"],
+                            "esperado": item_esp["preco_unitario"],
+                            "extraido": None,
+                            "correto": False,
+                            "erro": "item não extraído"
+                        })
+                        comp["itens_corretos"] = False
+
+                # Comparar valor total
+                valor_ext = extraido.get("valor_total_calculado", 0)
+                valor_esp = esperado["valor_total"]
+                diff_total = abs(valor_ext - valor_esp) if valor_ext else valor_esp
+
+                comp["valor_total_esperado"] = valor_esp
+                comp["valor_total_extraido"] = valor_ext
+                comp["valor_total_correto"] = diff_total < 0.01
+
+                resultado["comparacao"].append(comp)
+
+        # Calcular confiabilidade
+        total_itens = 0
+        itens_corretos = 0
+        for comp in resultado["comparacao"]:
+            for det in comp["detalhes"]:
+                total_itens += 1
+                if det.get("correto"):
+                    itens_corretos += 1
+
+        resultado["confiabilidade"] = {
+            "itens_testados": total_itens,
+            "itens_corretos": itens_corretos,
+            "taxa_acerto": round(itens_corretos / total_itens * 100, 2) if total_itens > 0 else 0,
+            "todos_corretos": itens_corretos == total_itens
+        }
+
+        resultado["sucesso"] = True
+
+    except Exception as e:
+        resultado["erro"] = str(e)
+        resultado["traceback"] = traceback.format_exc()
+
+    return resultado
+
 
 # Debug: verificar caminho do frontend
 @app.get("/debug/static")
