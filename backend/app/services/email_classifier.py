@@ -890,19 +890,28 @@ Responda APENAS com JSON no formato:
 
             # Processar cada item da solicitacao
             for idx, item_solicitacao in enumerate(itens_solicitacao):
-                # Buscar preco especifico para este item (pelo indice)
+                # Buscar preco especifico para este item
                 preco_item = None
                 marca_item = None
 
-                # Primeiro, tentar encontrar item extraido pelo indice
+                # Tentar encontrar item extraido pelo indice (aceitar base-0 ou base-1)
                 for item_ext in itens_extraidos:
-                    if item_ext.get('indice') == idx:
+                    item_idx = item_ext.get('indice')
+                    # Aceitar indice 0 ou 1 para o primeiro item, 1 ou 2 para o segundo, etc.
+                    if item_idx == idx or item_idx == idx + 1:
                         preco_item = item_ext.get('preco_unitario')
                         marca_item = item_ext.get('marca')
-                        print(f"[CLASSIFICADOR] Item {idx}: preco={preco_item}, marca={marca_item}")
+                        print(f"[CLASSIFICADOR] Item {idx}: encontrado por indice {item_idx}, preco={preco_item}")
                         break
 
-                # Se nao encontrou por indice, usar preco geral (formato antigo)
+                # Se nao encontrou por indice, tentar pela posicao na lista
+                if preco_item is None and idx < len(itens_extraidos):
+                    item_ext = itens_extraidos[idx]
+                    preco_item = item_ext.get('preco_unitario')
+                    marca_item = item_ext.get('marca')
+                    print(f"[CLASSIFICADOR] Item {idx}: usando posicao direta, preco={preco_item}")
+
+                # Se ainda nao encontrou, usar preco geral (formato antigo)
                 if preco_item is None and preco_unitario_geral:
                     preco_item = preco_unitario_geral
                     marca_item = marca_geral
