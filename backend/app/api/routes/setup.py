@@ -27,7 +27,7 @@ router = APIRouter()
 @router.get("/version")
 def get_version():
     """Retorna versão do backend"""
-    return {"version": "1.0034", "endpoint": "setup/version"}
+    return {"version": "1.0035", "endpoint": "setup/version"}
 
 
 class SetupRequest(BaseModel):
@@ -171,7 +171,7 @@ def diagnostico_cotacoes():
         from sqlalchemy import text
         db = SessionLocal()
         try:
-            dados = {"solicitacoes": [], "propostas": [], "contagens": {}}
+            dados = {"solicitacoes": [], "propostas": [], "contagens": {}, "tenants": []}
 
             # Contagem direta via SQL
             count_sol = db.execute(text("SELECT COUNT(*) FROM solicitacoes_cotacao")).scalar()
@@ -196,6 +196,26 @@ def diagnostico_cotacoes():
                     "tenant_id": row[5]
                 })
 
+            # Itens proposta via SQL
+            dados["itens_proposta"] = []
+            itens_prop_rows = db.execute(text("SELECT id, proposta_id, item_solicitacao_id, preco_unitario, tenant_id FROM itens_proposta")).fetchall()
+            for row in itens_prop_rows:
+                dados["itens_proposta"].append({
+                    "id": row[0], "proposta_id": row[1], "item_solicitacao_id": row[2],
+                    "preco_unitario": float(row[3]) if row[3] else None,
+                    "tenant_id": row[4]
+                })
+
+            # Itens solicitacao via SQL
+            dados["itens_solicitacao"] = []
+            itens_sol_rows = db.execute(text("SELECT id, solicitacao_id, produto_id, quantidade, tenant_id FROM itens_solicitacao")).fetchall()
+            for row in itens_sol_rows:
+                dados["itens_solicitacao"].append({
+                    "id": row[0], "solicitacao_id": row[1], "produto_id": row[2],
+                    "quantidade": float(row[3]) if row[3] else None,
+                    "tenant_id": row[4]
+                })
+
             return dados
         finally:
             db.close()
@@ -208,14 +228,13 @@ def diagnostico_cotacoes():
 def debug_propostas(solicitacao_id: int):
     """
     DEBUG: Simula o endpoint de propostas sem autenticação.
-    Testa EXATAMENTE a mesma lógica do endpoint real.
+    Testa EXATAMENTE a mesma lógica do endpoint real incluindo _enrich_proposta_response.
     """
     try:
         from app.database import SessionLocal
-        from app.models.cotacao import SolicitacaoCotacao, PropostaFornecedor, ItemProposta
+        from app.models.cotacao import SolicitacaoCotacao, PropostaFornecedor, ItemProposta, ItemSolicitacao
         from app.models.fornecedor import Fornecedor
         from app.models.produto import Produto
-        from app.models.cotacao import ItemSolicitacao
 
         db = SessionLocal()
         try:
@@ -232,34 +251,62 @@ def debug_propostas(solicitacao_id: int):
                 PropostaFornecedor.solicitacao_id == solicitacao_id
             ).all()
 
-            # Montar resposta detalhada
-            resultado = {
-                "solicitacao": {
-                    "id": solicitacao.id,
-                    "numero": solicitacao.numero,
-                    "tenant_id": solicitacao.tenant_id
-                },
-                "total_propostas": len(propostas),
-                "propostas": []
+            # Montar resposta usando a mesma lógica de _enrich_proposta_response
+            items = []
+            erros = []
+
+            for proposta in propostas:
+                try:
+                    fornecedor = db.query(Fornecedor).filter(Fornecedor.id == proposta.fornecedor_id).first()
+
+                    # Processar itens da proposta (igual ao _enrich_proposta_response)
+                    itens = []
+                    for item in proposta.itens:
+                        item_solic = db.query(ItemSolicitacao).filter(ItemSolicitacao.id == item.item_solicitacao_id).first()
+                        produto = db.query(Produto).filter(Produto.id == item_solic.produto_id).first() if item_solic else None
+
+                        itens.append({
+                            "id": item.id, "proposta_id": item.proposta_id, "item_solicitacao_id": item.item_solicitacao_id,
+                            "preco_unitario": float(item.preco_unitario) if item.preco_unitario else None,
+                            "quantidade_disponivel": float(item.quantidade_disponivel) if item.quantidade_disponivel else None,
+                            "desconto_percentual": float(item.desconto_percentual) if item.desconto_percentual else None,
+                            "preco_final": float(item.preco_final) if item.preco_final else None,
+                            "prazo_entrega_item": item.prazo_entrega_item, "observacoes": item.observacoes,
+                            "marca_oferecida": item.marca_oferecida, "tenant_id": item.tenant_id,
+                            "produto_nome": produto.nome if produto else None,
+                            "quantidade_solicitada": float(item_solic.quantidade) if item_solic else None
+                        })
+
+                    items.append({
+                        "id": proposta.id, "solicitacao_id": proposta.solicitacao_id, "fornecedor_id": proposta.fornecedor_id,
+                        "status": str(proposta.status) if proposta.status else None,
+                        "data_envio_solicitacao": str(proposta.data_envio_solicitacao) if proposta.data_envio_solicitacao else None,
+                        "data_recebimento": str(proposta.data_recebimento) if proposta.data_recebimento else None,
+                        "condicoes_pagamento": proposta.condicoes_pagamento,
+                        "prazo_entrega": proposta.prazo_entrega,
+                        "validade_proposta": str(proposta.validade_proposta) if proposta.validade_proposta else None,
+                        "valor_total": float(proposta.valor_total) if proposta.valor_total else None,
+                        "desconto_total": float(proposta.desconto_total) if proposta.desconto_total else 0,
+                        "frete_tipo": proposta.frete_tipo, "frete_valor": float(proposta.frete_valor) if proposta.frete_valor else None,
+                        "observacoes": proposta.observacoes,
+                        "score_preco": float(proposta.score_preco) if proposta.score_preco else None,
+                        "score_prazo": float(proposta.score_prazo) if proposta.score_prazo else None,
+                        "score_condicoes": float(proposta.score_condicoes) if proposta.score_condicoes else None,
+                        "score_total": float(proposta.score_total) if proposta.score_total else None,
+                        "tenant_id": proposta.tenant_id,
+                        "itens": itens, "fornecedor_nome": fornecedor.razao_social if fornecedor else None,
+                        "fornecedor_cnpj": fornecedor.cnpj if fornecedor else None
+                    })
+                except Exception as e:
+                    import traceback
+                    erros.append({"proposta_id": proposta.id, "erro": str(e), "trace": traceback.format_exc()})
+
+            return {
+                "solicitacao": {"id": solicitacao.id, "numero": solicitacao.numero, "tenant_id": solicitacao.tenant_id},
+                "items": items,
+                "total": len(items),
+                "erros": erros
             }
-
-            for p in propostas:
-                fornecedor = db.query(Fornecedor).filter(Fornecedor.id == p.fornecedor_id).first()
-
-                # Buscar itens da proposta
-                itens_count = db.query(ItemProposta).filter(ItemProposta.proposta_id == p.id).count()
-
-                resultado["propostas"].append({
-                    "id": p.id,
-                    "fornecedor_id": p.fornecedor_id,
-                    "fornecedor_nome": fornecedor.razao_social if fornecedor else None,
-                    "status": str(p.status) if p.status else None,
-                    "valor_total": float(p.valor_total) if p.valor_total else None,
-                    "tenant_id": p.tenant_id,
-                    "itens_count": itens_count
-                })
-
-            return resultado
         finally:
             db.close()
     except Exception as e:
