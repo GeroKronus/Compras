@@ -211,13 +211,21 @@ VOCE E UM ESPECIALISTA EM EXTRAIR DADOS DE PROPOSTAS COMERCIAIS.
 Este email e uma RESPOSTA de um FORNECEDOR a uma solicitacao de cotacao.
 PRESUMA que este email CONTEM uma proposta comercial, mesmo que esteja mal formatado.
 
+## PRIORIDADE DE DADOS (MUITO IMPORTANTE!)
+Se houver uma secao "CONTEUDO DO ANEXO PDF" ou "DADOS DA PROPOSTA EXTRAÍDOS DO PDF":
+- SEMPRE use os dados do PDF como fonte PRINCIPAL
+- Os dados do PDF sao MAIS CONFIAVEIS que o corpo do email
+- IGNORE citacoes do email original (texto apos "---" ou ">")
+- O PDF contem os precos REAIS preenchidos pelo fornecedor
+
 O fornecedor pode ter respondido de diversas formas:
+- Anexando um PDF com a proposta preenchida (MAIS CONFIAVEL)
 - Digitando os valores diretamente no email
-- Anexando um PDF com a proposta preenchida
 - Escrevendo de forma informal ("te faço por 50 reais", "entrego semana que vem")
 - Usando abreviacoes ("pgto 30dd", "ent. imediata", "R$15/un")
 
 SUA MISSAO: Encontrar e extrair TODOS os dados comerciais, ESPECIALMENTE preços por item.
+PRIORIZE os dados do PDF se houver!
 
 ## CONTEUDO DO EMAIL E ANEXOS
 {conteudo_completo}
