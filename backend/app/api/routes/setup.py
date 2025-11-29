@@ -827,6 +827,46 @@ def limpar_emails_e_propostas(tenant_id: int):
         return {"erro": str(e), "traceback": traceback.format_exc()}
 
 
+@router.get("/debug-email/{email_uid}")
+def debug_email(email_uid: str):
+    """
+    Debug: Mostra extração de corpo e PDF de um email específico.
+    Use o UID do email (ex: 193 para o email da Kronus).
+    """
+    try:
+        import imaplib
+        import email as email_lib
+        from app.services.email_classifier import email_classifier
+        from app.config import settings
+
+        mail = imaplib.IMAP4_SSL(settings.IMAP_HOST or 'imappro.zoho.com', settings.IMAP_PORT or 993)
+        mail.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+        mail.select('INBOX')
+
+        result, msg_data = mail.fetch(email_uid.encode(), '(RFC822)')
+        raw_email = msg_data[0][1]
+        msg = email_lib.message_from_bytes(raw_email)
+
+        subject = msg.get('Subject', '')
+        corpo = email_classifier._extrair_corpo(msg)
+        conteudo_pdf = email_classifier._extrair_anexos_pdf(msg)
+
+        mail.logout()
+
+        return {
+            "email_uid": email_uid,
+            "subject": subject,
+            "corpo_tamanho": len(corpo) if corpo else 0,
+            "corpo_preview": corpo[:300] if corpo else "(vazio)",
+            "pdf_tamanho": len(conteudo_pdf) if conteudo_pdf else 0,
+            "pdf_preview": conteudo_pdf[:500] if conteudo_pdf else "(nenhum PDF)",
+            "pdf_encontrado": bool(conteudo_pdf)
+        }
+    except Exception as e:
+        import traceback
+        return {"erro": str(e), "traceback": traceback.format_exc()}
+
+
 @router.post("/processar-emails/{tenant_id}")
 def processar_emails_manual(tenant_id: int, dias_atras: int = 30):
     """

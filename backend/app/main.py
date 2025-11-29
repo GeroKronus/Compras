@@ -42,7 +42,7 @@ def health_check():
 @app.get("/api/v1/version")
 def get_api_version():
     """Retorna versão do backend para verificar deploy"""
-    return {"version": "1.0056", "status": "ok"}
+    return {"version": "1.0057", "status": "ok"}
 
 # Debug: verificar caminho do frontend
 @app.get("/debug/static")
