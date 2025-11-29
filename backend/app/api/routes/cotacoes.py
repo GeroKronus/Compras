@@ -344,12 +344,22 @@ def listar_propostas_solicitacao(
     tenant_id: int = Depends(get_current_tenant_id)
 ):
     """Listar todas as propostas de uma solicitacao"""
-    get_by_id(db, SolicitacaoCotacao, solicitacao_id, tenant_id, error_message="Solicitacao nao encontrada")
+    solicitacao = get_by_id(db, SolicitacaoCotacao, solicitacao_id, tenant_id, error_message="Solicitacao nao encontrada")
 
+    # Buscar propostas pela solicitacao (tenant validado via solicitacao)
+    # Tambem corrige tenant_id das propostas se estiver incorreto
     propostas = db.query(PropostaFornecedor).filter(
-        PropostaFornecedor.solicitacao_id == solicitacao_id,
-        PropostaFornecedor.tenant_id == tenant_id
+        PropostaFornecedor.solicitacao_id == solicitacao_id
     ).all()
+
+    # Corrigir tenant_id das propostas automaticamente
+    corrigidas = 0
+    for p in propostas:
+        if p.tenant_id != solicitacao.tenant_id:
+            p.tenant_id = solicitacao.tenant_id
+            corrigidas += 1
+    if corrigidas > 0:
+        db.commit()
 
     items = [_enrich_proposta_response(p, db) for p in propostas]
     return {"items": items, "total": len(items)}
