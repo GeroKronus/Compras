@@ -27,7 +27,7 @@ router = APIRouter()
 @router.get("/version")
 def get_version():
     """Retorna versão do backend"""
-    return {"version": "1.0047", "endpoint": "setup/version"}
+    return {"version": "1.0048", "endpoint": "setup/version"}
 
 
 class SetupRequest(BaseModel):
@@ -765,6 +765,62 @@ def forcar_reprocessamento_email(email_id: int):
 def teste_simples():
     """Endpoint de teste simples"""
     return {"ok": True, "mensagem": "Endpoint funcionando"}
+
+
+@router.post("/limpar-emails-propostas/{tenant_id}")
+def limpar_emails_e_propostas(tenant_id: int):
+    """
+    Limpa TODOS os emails processados e propostas de um tenant.
+    Permite reprocessamento completo dos emails.
+    SEM AUTENTICAÇÃO - apenas para debug.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.models.email_processado import EmailProcessado
+        from app.models.cotacao import PropostaFornecedor, ItemProposta
+        from sqlalchemy import text
+
+        db = SessionLocal()
+        try:
+            deletados = {
+                "itens_proposta": 0,
+                "propostas": 0,
+                "emails": 0
+            }
+
+            # 1. Deletar itens_proposta
+            itens_del = db.query(ItemProposta).filter(
+                ItemProposta.tenant_id == tenant_id
+            ).delete(synchronize_session=False)
+            deletados["itens_proposta"] = itens_del
+
+            # 2. Deletar propostas
+            props_del = db.query(PropostaFornecedor).filter(
+                PropostaFornecedor.tenant_id == tenant_id
+            ).delete(synchronize_session=False)
+            deletados["propostas"] = props_del
+
+            # 3. Deletar emails processados
+            emails_del = db.query(EmailProcessado).filter(
+                EmailProcessado.tenant_id == tenant_id
+            ).delete(synchronize_session=False)
+            deletados["emails"] = emails_del
+
+            db.commit()
+
+            return {
+                "sucesso": True,
+                "tenant_id": tenant_id,
+                "deletados": deletados,
+                "proximos_passos": [
+                    "Execute /setup/processar-emails/{tenant_id} para reprocessar"
+                ]
+            }
+        finally:
+            db.close()
+    except Exception as e:
+        import traceback
+        return {"erro": str(e), "traceback": traceback.format_exc()}
 
 
 @router.post("/processar-emails/{tenant_id}")
