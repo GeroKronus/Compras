@@ -938,3 +938,106 @@ def processar_emails_manual(tenant_id: int, dias_atras: int = 30):
     finally:
         if db:
             db.close()
+
+
+@router.post("/reprocessar-pendentes/{tenant_id}")
+def reprocessar_pendentes(tenant_id: int):
+    """
+    Reprocessa emails com status 'pendente' que já existem no banco.
+    Útil quando emails precisam ser reanalisados pela IA.
+    """
+    import traceback
+    from datetime import datetime
+
+    try:
+        from app.database import SessionLocal
+        from app.models.email_processado import EmailProcessado
+        from app.services.email_classifier import email_classifier
+
+        db = SessionLocal()
+        try:
+            # Buscar emails pendentes do tenant
+            pendentes = db.query(EmailProcessado).filter(
+                EmailProcessado.tenant_id == tenant_id,
+                EmailProcessado.status == "pendente"
+            ).all()
+
+            if not pendentes:
+                return {"sucesso": True, "mensagem": "Nenhum email pendente encontrado", "processados": 0}
+
+            resultados = []
+            for email_proc in pendentes:
+                try:
+                    # Buscar email original via IMAP pelo UID
+                    import imaplib
+                    import email as email_lib
+                    from app.config import settings
+
+                    mail = imaplib.IMAP4_SSL(
+                        settings.IMAP_HOST or 'imappro.zoho.com',
+                        settings.IMAP_PORT or 993
+                    )
+                    mail.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                    mail.select('INBOX')
+
+                    result, msg_data = mail.fetch(email_proc.email_uid.encode(), '(RFC822)')
+                    if result != 'OK' or not msg_data or not msg_data[0]:
+                        resultados.append({"id": email_proc.id, "erro": "Email não encontrado no IMAP"})
+                        mail.logout()
+                        continue
+
+                    raw_email = msg_data[0][1]
+                    msg = email_lib.message_from_bytes(raw_email)
+
+                    # Extrair corpo e PDF
+                    corpo = email_classifier._extrair_corpo(msg)
+                    conteudo_pdf = email_classifier._extrair_anexos_pdf(msg)
+
+                    mail.logout()
+
+                    # Classificar pela IA
+                    classificacao = email_classifier._classificar_email_ia(
+                        email_proc.assunto or "",
+                        corpo,
+                        email_proc.remetente or "",
+                        conteudo_pdf
+                    )
+
+                    # Atualizar registro
+                    email_proc.tipo = classificacao.get("tipo", "outros")
+                    email_proc.dados_extraidos = str(classificacao.get("dados_extraidos", {}))
+                    email_proc.status = "processado"
+                    email_proc.data_processamento = datetime.utcnow()
+
+                    # Se for resposta de cotação, vincular proposta
+                    if classificacao.get("tipo") == "resposta_cotacao":
+                        # Procurar solicitação correspondente
+                        email_classifier._vincular_proposta(
+                            db, email_proc, classificacao, tenant_id
+                        )
+
+                    db.commit()
+                    resultados.append({
+                        "id": email_proc.id,
+                        "assunto": email_proc.assunto,
+                        "tipo": classificacao.get("tipo"),
+                        "pdf_tamanho": len(conteudo_pdf) if conteudo_pdf else 0,
+                        "dados_extraidos": classificacao.get("dados_extraidos", {})
+                    })
+
+                except Exception as e:
+                    db.rollback()
+                    resultados.append({"id": email_proc.id, "erro": str(e)})
+
+            return {
+                "sucesso": True,
+                "tenant_id": tenant_id,
+                "total_pendentes": len(pendentes),
+                "resultados": resultados
+            }
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        return {"erro": str(e), "traceback": traceback.format_exc()}

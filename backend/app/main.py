@@ -42,7 +42,7 @@ def health_check():
 @app.get("/api/v1/version")
 def get_api_version():
     """Retorna versão do backend para verificar deploy"""
-    return {"version": "1.0060", "status": "ok"}
+    return {"version": "1.0061", "status": "ok"}
 
 # Debug: testar pypdf
 @app.get("/debug/pypdf")
