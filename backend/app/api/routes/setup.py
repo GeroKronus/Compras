@@ -8,6 +8,12 @@ from pydantic import BaseModel, EmailStr
 from app.database import get_db, engine, Base
 from app.models.tenant import Tenant
 from app.models.usuario import Usuario, TipoUsuario
+from app.models.cotacao import (
+    SolicitacaoCotacao, PropostaFornecedor, ItemProposta, ItemSolicitacao,
+    StatusSolicitacao, StatusProposta
+)
+from app.models.fornecedor import Fornecedor
+from app.models.produto import Produto
 # Importar todos os models para registrar no metadata
 from app.models import (
     tenant, usuario, categoria, produto, fornecedor,
@@ -152,3 +158,75 @@ def initialize_system(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro ao inicializar sistema: {str(e)}"
         )
+
+
+@router.get("/diagnostico")
+def diagnostico_cotacoes(db: Session = Depends(get_db)):
+    """
+    Endpoint temporário de diagnóstico para verificar estado das cotações.
+    SEM AUTENTICAÇÃO - apenas para debug.
+    """
+    try:
+        # Buscar todas as solicitações
+        solicitacoes = db.query(SolicitacaoCotacao).all()
+
+        result = {
+            "total_solicitacoes": len(solicitacoes),
+            "solicitacoes": []
+        }
+
+        for sol in solicitacoes:
+            # Buscar propostas desta solicitação
+            propostas = db.query(PropostaFornecedor).filter(
+                PropostaFornecedor.solicitacao_id == sol.id
+            ).all()
+
+            # Buscar itens da solicitação
+            itens_sol = db.query(ItemSolicitacao).filter(
+                ItemSolicitacao.solicitacao_id == sol.id
+            ).all()
+
+            propostas_data = []
+            for prop in propostas:
+                # Buscar fornecedor
+                forn = db.query(Fornecedor).filter(Fornecedor.id == prop.fornecedor_id).first()
+
+                # Buscar itens da proposta
+                itens_prop = db.query(ItemProposta).filter(
+                    ItemProposta.proposta_id == prop.id
+                ).all()
+
+                propostas_data.append({
+                    "id": prop.id,
+                    "fornecedor_id": prop.fornecedor_id,
+                    "fornecedor_nome": forn.razao_social if forn else "N/A",
+                    "status": prop.status.value if prop.status else None,
+                    "valor_total": float(prop.valor_total) if prop.valor_total else None,
+                    "data_envio": str(prop.data_envio) if prop.data_envio else None,
+                    "total_itens": len(itens_prop),
+                    "itens": [
+                        {
+                            "produto_id": item.produto_id,
+                            "quantidade": float(item.quantidade) if item.quantidade else None,
+                            "preco_unitario": float(item.preco_unitario) if item.preco_unitario else None
+                        }
+                        for item in itens_prop
+                    ]
+                })
+
+            result["solicitacoes"].append({
+                "id": sol.id,
+                "numero": sol.numero,
+                "titulo": sol.titulo,
+                "status": sol.status.value if sol.status else None,
+                "tenant_id": sol.tenant_id,
+                "data_abertura": str(sol.data_abertura) if sol.data_abertura else None,
+                "total_itens": len(itens_sol),
+                "total_propostas": len(propostas),
+                "propostas": propostas_data
+            })
+
+        return result
+
+    except Exception as e:
+        return {"erro": str(e), "tipo": type(e).__name__}
