@@ -42,7 +42,28 @@ def health_check():
 @app.get("/api/v1/version")
 def get_api_version():
     """Retorna versão do backend para verificar deploy"""
-    return {"version": "1.0059", "status": "ok"}
+    return {"version": "1.0060", "status": "ok"}
+
+# Debug: testar pypdf
+@app.get("/debug/pypdf")
+def debug_pypdf():
+    """Testa se pypdf está instalado e funcionando."""
+    resultado = {"etapas": []}
+    try:
+        resultado["etapas"].append("iniciando...")
+        from pypdf import PdfReader
+        resultado["etapas"].append("import pypdf OK")
+        resultado["pypdf_ok"] = True
+        resultado["versao"] = str(PdfReader)
+    except ImportError as e:
+        resultado["pypdf_ok"] = False
+        resultado["erro_import"] = str(e)
+    except Exception as e:
+        import traceback
+        resultado["pypdf_ok"] = False
+        resultado["erro"] = str(e)
+        resultado["traceback"] = traceback.format_exc()
+    return resultado
 
 # Debug: verificar caminho do frontend
 @app.get("/debug/static")
