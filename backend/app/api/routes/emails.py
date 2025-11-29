@@ -640,6 +640,276 @@ def enviar_email_teste(
         )
 
 
+# ============ REPROCESSAMENTO COM IA ============
+
+class ReprocessarExtracaoResponse(BaseModel):
+    total_reprocessados: int
+    total_com_dados: int
+    total_erros: int
+    detalhes: List[dict]
+
+
+@router.post("/reprocessar-extracao", response_model=ReprocessarExtracaoResponse)
+def reprocessar_extracao_emails(
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_current_tenant_id),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    Reprocessa emails classificados para extrair dados via IA.
+
+    Busca emails que:
+    - Estao com status CLASSIFICADO
+    - Tem proposta_id definido
+    - NAO tem dados_extraidos ou dados_extraidos esta vazio
+
+    Para cada email, usa a IA para extrair dados comerciais (preco, prazo, etc)
+    e atualiza a proposta correspondente.
+    """
+    from app.services.ai_service import ai_service
+    from app.models.cotacao import PropostaFornecedor, StatusProposta, ItemSolicitacao, ItemProposta
+    import json
+
+    if not ai_service.is_available:
+        raise HTTPException(
+            status_code=503,
+            detail="Servico de IA nao configurado. Configure ANTHROPIC_API_KEY."
+        )
+
+    # Buscar emails classificados sem dados extraidos
+    emails = db.query(EmailProcessado).filter(
+        EmailProcessado.tenant_id == tenant_id,
+        EmailProcessado.status == StatusEmailProcessado.CLASSIFICADO,
+        EmailProcessado.proposta_id.isnot(None),
+        (EmailProcessado.dados_extraidos.is_(None)) | (EmailProcessado.dados_extraidos == '') | (EmailProcessado.dados_extraidos == '{}')
+    ).all()
+
+    resultado = {
+        "total_reprocessados": 0,
+        "total_com_dados": 0,
+        "total_erros": 0,
+        "detalhes": []
+    }
+
+    for email in emails:
+        resultado["total_reprocessados"] += 1
+        detalhe = {
+            "email_id": email.id,
+            "assunto": email.assunto,
+            "proposta_id": email.proposta_id,
+            "sucesso": False,
+            "erro": None,
+            "dados_extraidos": None
+        }
+
+        try:
+            # Verificar se tem corpo
+            if not email.corpo_completo:
+                detalhe["erro"] = "Email sem corpo"
+                resultado["total_erros"] += 1
+                resultado["detalhes"].append(detalhe)
+                continue
+
+            # Extrair dados via IA
+            dados = ai_service.extrair_dados_proposta_email(email.corpo_completo)
+
+            if "error" in dados:
+                detalhe["erro"] = dados["error"]
+                resultado["total_erros"] += 1
+                resultado["detalhes"].append(detalhe)
+                continue
+
+            # Atualizar email com dados extraidos
+            email.dados_extraidos = json.dumps(dados)
+            detalhe["dados_extraidos"] = dados
+
+            # Atualizar proposta com dados
+            proposta = db.query(PropostaFornecedor).filter(
+                PropostaFornecedor.id == email.proposta_id
+            ).first()
+
+            if proposta:
+                # Atualizar campos da proposta
+                if dados.get('prazo_entrega_dias') is not None:
+                    proposta.prazo_entrega = dados['prazo_entrega_dias']
+
+                if dados.get('condicoes_pagamento'):
+                    proposta.condicoes_pagamento = dados['condicoes_pagamento']
+
+                if dados.get('observacoes'):
+                    proposta.observacoes = dados['observacoes']
+
+                if dados.get('frete_incluso') is not None:
+                    proposta.frete_tipo = 'CIF' if dados['frete_incluso'] else 'FOB'
+
+                if dados.get('frete_valor') is not None:
+                    proposta.frete_valor = dados['frete_valor']
+
+                # Calcular valor total
+                preco_total = dados.get('preco_total')
+                preco_unitario = dados.get('preco_unitario')
+
+                if preco_total:
+                    proposta.valor_total = preco_total
+                elif preco_unitario and dados.get('quantidade'):
+                    proposta.valor_total = preco_unitario * dados['quantidade']
+
+                # Criar/atualizar ItemProposta se tiver preco unitario
+                if preco_unitario:
+                    item_solicitacao = db.query(ItemSolicitacao).filter(
+                        ItemSolicitacao.solicitacao_id == proposta.solicitacao_id
+                    ).first()
+
+                    if item_solicitacao:
+                        item_proposta = db.query(ItemProposta).filter(
+                            ItemProposta.proposta_id == proposta.id,
+                            ItemProposta.item_solicitacao_id == item_solicitacao.id
+                        ).first()
+
+                        if item_proposta:
+                            item_proposta.preco_unitario = preco_unitario
+                            item_proposta.preco_final = preco_unitario
+                            if dados.get('marca_produto'):
+                                item_proposta.marca_oferecida = dados['marca_produto']
+                        else:
+                            item_proposta = ItemProposta(
+                                proposta_id=proposta.id,
+                                item_solicitacao_id=item_solicitacao.id,
+                                preco_unitario=preco_unitario,
+                                preco_final=preco_unitario,
+                                quantidade_disponivel=dados.get('quantidade'),
+                                marca_oferecida=dados.get('marca_produto'),
+                                tenant_id=tenant_id
+                            )
+                            db.add(item_proposta)
+
+            db.commit()
+            detalhe["sucesso"] = True
+            resultado["total_com_dados"] += 1
+
+        except Exception as e:
+            detalhe["erro"] = str(e)
+            resultado["total_erros"] += 1
+            db.rollback()
+
+        resultado["detalhes"].append(detalhe)
+
+    return resultado
+
+
+@router.post("/{email_id}/extrair-dados")
+def extrair_dados_email(
+    email_id: int,
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_current_tenant_id),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    Extrai dados comerciais de um email especifico usando IA.
+
+    Util para reprocessar um email individual e extrair
+    precos, prazos, condicoes de pagamento, etc.
+    """
+    from app.services.ai_service import ai_service
+    from app.models.cotacao import PropostaFornecedor, ItemSolicitacao, ItemProposta
+    import json
+
+    if not ai_service.is_available:
+        raise HTTPException(
+            status_code=503,
+            detail="Servico de IA nao configurado. Configure ANTHROPIC_API_KEY."
+        )
+
+    # Buscar email
+    email = db.query(EmailProcessado).filter(
+        EmailProcessado.id == email_id,
+        EmailProcessado.tenant_id == tenant_id
+    ).first()
+
+    if not email:
+        raise HTTPException(status_code=404, detail="Email nao encontrado")
+
+    if not email.corpo_completo:
+        raise HTTPException(status_code=400, detail="Email sem corpo para extrair dados")
+
+    # Extrair dados via IA
+    dados = ai_service.extrair_dados_proposta_email(email.corpo_completo)
+
+    if "error" in dados:
+        raise HTTPException(status_code=500, detail=dados["error"])
+
+    # Atualizar email com dados extraidos
+    email.dados_extraidos = json.dumps(dados)
+
+    # Se tiver proposta_id, atualizar proposta
+    if email.proposta_id:
+        proposta = db.query(PropostaFornecedor).filter(
+            PropostaFornecedor.id == email.proposta_id
+        ).first()
+
+        if proposta:
+            if dados.get('prazo_entrega_dias') is not None:
+                proposta.prazo_entrega = dados['prazo_entrega_dias']
+
+            if dados.get('condicoes_pagamento'):
+                proposta.condicoes_pagamento = dados['condicoes_pagamento']
+
+            if dados.get('observacoes'):
+                proposta.observacoes = dados['observacoes']
+
+            if dados.get('frete_incluso') is not None:
+                proposta.frete_tipo = 'CIF' if dados['frete_incluso'] else 'FOB'
+
+            if dados.get('frete_valor') is not None:
+                proposta.frete_valor = dados['frete_valor']
+
+            preco_total = dados.get('preco_total')
+            preco_unitario = dados.get('preco_unitario')
+
+            if preco_total:
+                proposta.valor_total = preco_total
+            elif preco_unitario and dados.get('quantidade'):
+                proposta.valor_total = preco_unitario * dados['quantidade']
+
+            if preco_unitario:
+                item_solicitacao = db.query(ItemSolicitacao).filter(
+                    ItemSolicitacao.solicitacao_id == proposta.solicitacao_id
+                ).first()
+
+                if item_solicitacao:
+                    item_proposta = db.query(ItemProposta).filter(
+                        ItemProposta.proposta_id == proposta.id,
+                        ItemProposta.item_solicitacao_id == item_solicitacao.id
+                    ).first()
+
+                    if item_proposta:
+                        item_proposta.preco_unitario = preco_unitario
+                        item_proposta.preco_final = preco_unitario
+                        if dados.get('marca_produto'):
+                            item_proposta.marca_oferecida = dados['marca_produto']
+                    else:
+                        item_proposta = ItemProposta(
+                            proposta_id=proposta.id,
+                            item_solicitacao_id=item_solicitacao.id,
+                            preco_unitario=preco_unitario,
+                            preco_final=preco_unitario,
+                            quantidade_disponivel=dados.get('quantidade'),
+                            marca_oferecida=dados.get('marca_produto'),
+                            tenant_id=tenant_id
+                        )
+                        db.add(item_proposta)
+
+    db.commit()
+
+    return {
+        "sucesso": True,
+        "email_id": email_id,
+        "proposta_id": email.proposta_id,
+        "dados_extraidos": dados,
+        "confianca": dados.get('confianca_extracao', 0)
+    }
+
+
 # ============ HELPERS ============
 
 def _enrich_email_response(email: EmailProcessado, db: Session, incluir_corpo_completo: bool = False) -> dict:
