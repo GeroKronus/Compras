@@ -12,7 +12,7 @@ from app.config import settings
 class AIService:
     """Servico para analise de propostas com IA"""
 
-    MODEL = "claude-3-5-sonnet-20241022"
+    MODEL = "claude-sonnet-4-20250514"
 
     def __init__(self):
         self.client = None
