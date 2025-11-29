@@ -27,7 +27,7 @@ router = APIRouter()
 @router.get("/version")
 def get_version():
     """Retorna versão do backend"""
-    return {"version": "1.0040", "endpoint": "setup/version"}
+    return {"version": "1.0041", "endpoint": "setup/version"}
 
 
 class SetupRequest(BaseModel):
@@ -754,6 +754,34 @@ def forcar_reprocessamento_email(email_id: int):
                 ]
             }
 
+        finally:
+            db.close()
+    except Exception as e:
+        import traceback
+        return {"erro": str(e), "traceback": traceback.format_exc()}
+
+
+@router.post("/processar-emails/{tenant_id}")
+def processar_emails_manual(tenant_id: int, dias_atras: int = 30):
+    """
+    Processa emails manualmente sem aguardar o job automático.
+    SEM AUTENTICAÇÃO - apenas para debug/teste.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.services.email_classifier import EmailClassifier
+
+        db = SessionLocal()
+        try:
+            classifier = EmailClassifier()
+            resultado = classifier.processar_emails_novos(db, tenant_id, dias_atras)
+
+            return {
+                "sucesso": True,
+                "tenant_id": tenant_id,
+                "dias_atras": dias_atras,
+                "resultado": resultado
+            }
         finally:
             db.close()
     except Exception as e:

@@ -140,6 +140,17 @@ export default function Dashboard() {
     }
   });
 
+  // Mutation para processar emails manualmente
+  const processarEmailsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post(`/setup/processar-emails/3?dias_atras=30`);
+      return response.data;
+    },
+    onSuccess: () => {
+      refetchAlertas();
+    }
+  });
+
   const enviarTestEmail = () => {
     if (!emailTeste || !emailTeste.includes('@')) return;
     setTesteResult(null);
@@ -297,10 +308,22 @@ export default function Dashboard() {
                         </span>
                       )}
                     </div>
-                    <Button variant="ghost" size="sm" onClick={() => refetchAlertas()}>
-                      <ArrowPathIcon className={`h-4 w-4 mr-1 ${loadingAlertas ? 'animate-spin' : ''}`} />
-                      Atualizar
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => processarEmailsMutation.mutate()}
+                        disabled={processarEmailsMutation.isPending}
+                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300"
+                      >
+                        <EnvelopeIcon className={`h-4 w-4 mr-1 ${processarEmailsMutation.isPending ? 'animate-pulse' : ''}`} />
+                        {processarEmailsMutation.isPending ? 'Processando...' : 'Processar Emails'}
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => refetchAlertas()}>
+                        <ArrowPathIcon className={`h-4 w-4 mr-1 ${loadingAlertas ? 'animate-spin' : ''}`} />
+                        Atualizar
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
