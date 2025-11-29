@@ -101,21 +101,24 @@ def verificar_config_ia():
     """
     Verificar se a IA (Anthropic) esta configurada.
     """
-    import os
+    try:
+        import os
 
-    # Pegar direto do ambiente para evitar problemas
-    chave_env = os.environ.get('ANTHROPIC_API_KEY', '')
-    chave_settings = getattr(settings, 'ANTHROPIC_API_KEY', '') or ''
+        # Pegar direto do ambiente para evitar problemas
+        chave_env = os.environ.get('ANTHROPIC_API_KEY', '')
+        chave_settings = getattr(settings, 'ANTHROPIC_API_KEY', '') or ''
 
-    return {
-        "anthropic_configurado_env": bool(chave_env),
-        "anthropic_configurado_settings": bool(chave_settings),
-        "chave_env_inicio": chave_env[:20] + "..." if len(chave_env) > 20 else chave_env if chave_env else "(vazio)",
-        "chave_env_fim": "..." + chave_env[-10:] if len(chave_env) > 10 else chave_env if chave_env else "(vazio)",
-        "chave_env_tamanho": len(chave_env),
-        "chave_settings_inicio": chave_settings[:20] + "..." if len(chave_settings) > 20 else chave_settings if chave_settings else "(vazio)",
-        "chave_settings_tamanho": len(chave_settings)
-    }
+        return {
+            "anthropic_configurado_env": bool(chave_env),
+            "anthropic_configurado_settings": bool(chave_settings),
+            "chave_env_inicio": chave_env[:20] + "..." if len(chave_env) > 20 else chave_env if chave_env else "(vazio)",
+            "chave_env_fim": "..." + chave_env[-10:] if len(chave_env) > 10 else chave_env if chave_env else "(vazio)",
+            "chave_env_tamanho": len(chave_env),
+            "chave_settings_inicio": chave_settings[:20] + "..." if len(chave_settings) > 20 else chave_settings if chave_settings else "(vazio)",
+            "chave_settings_tamanho": len(chave_settings)
+        }
+    except Exception as e:
+        return {"erro": str(e), "tipo": type(e).__name__}
 
 
 @router.get("/config/ia-testar")
