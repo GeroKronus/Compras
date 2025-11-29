@@ -471,6 +471,41 @@ def verificar_config_email():
     }
 
 
+@router.get("/config/ia-status")
+def verificar_config_ia():
+    """
+    Verificar se a IA (Anthropic) esta configurada e funcionando.
+    Testa a conexao com a API.
+    """
+    from app.services.ai_service import ai_service
+
+    resultado = {
+        "anthropic_configurado": bool(settings.ANTHROPIC_API_KEY),
+        "chave_inicio": settings.ANTHROPIC_API_KEY[:20] + "..." if settings.ANTHROPIC_API_KEY else None,
+        "chave_fim": "..." + settings.ANTHROPIC_API_KEY[-10:] if settings.ANTHROPIC_API_KEY else None,
+        "chave_tamanho": len(settings.ANTHROPIC_API_KEY) if settings.ANTHROPIC_API_KEY else 0,
+        "ai_service_disponivel": ai_service.is_available,
+        "teste_conexao": None,
+        "erro": None
+    }
+
+    # Testar conexao se configurado
+    if ai_service.is_available:
+        try:
+            response = ai_service.client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=10,
+                messages=[{"role": "user", "content": "Diga apenas: OK"}]
+            )
+            resultado["teste_conexao"] = "OK"
+            resultado["resposta_teste"] = response.content[0].text
+        except Exception as e:
+            resultado["teste_conexao"] = "FALHOU"
+            resultado["erro"] = str(e)
+
+    return resultado
+
+
 @router.get("/teste/{email_destino}")
 def enviar_email_teste_publico(
     email_destino: str
