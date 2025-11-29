@@ -42,7 +42,7 @@ def health_check():
 @app.get("/api/v1/version")
 def get_api_version():
     """Retorna versão do backend para verificar deploy"""
-    return {"version": "1.0066", "status": "ok"}
+    return {"version": "1.0067", "status": "ok"}
 
 # Debug: testar pypdf
 @app.get("/debug/pypdf")
@@ -186,7 +186,7 @@ def reprocessar_email(email_id: int):
                     if fornecedor:
                         email_proc.fornecedor_id = fornecedor.id
                         resultado["fornecedor_id"] = fornecedor.id
-                        resultado["etapas"].append(f"fornecedor: {fornecedor.nome}")
+                        resultado["etapas"].append(f"fornecedor: {fornecedor.razao_social}")
 
                         # Buscar ou criar proposta
                         proposta = db.query(PropostaFornecedor).filter(
