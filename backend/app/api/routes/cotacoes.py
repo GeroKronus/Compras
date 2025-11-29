@@ -450,6 +450,29 @@ def obter_proposta(
     return _enrich_proposta_response(proposta, db)
 
 
+@router.put("/propostas/{proposta_id}", response_model=PropostaFornecedorResponse)
+def atualizar_proposta(
+    proposta_id: int,
+    update: PropostaFornecedorUpdate,
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_current_tenant_id),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """Atualizar dados de uma proposta manualmente"""
+    proposta = get_by_id(db, PropostaFornecedor, proposta_id, tenant_id, error_message="Proposta nao encontrada")
+
+    # Atualizar campos
+    update_data = update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        if hasattr(proposta, field):
+            setattr(proposta, field, value)
+
+    proposta.updated_by = current_user.id
+    db.commit()
+    db.refresh(proposta)
+    return _enrich_proposta_response(proposta, db)
+
+
 @router.post("/solicitacoes/{solicitacao_id}/escolher-vencedor", response_model=SolicitacaoCotacaoResponse)
 def escolher_vencedor(
     solicitacao_id: int,

@@ -169,6 +169,7 @@ class PropostaFornecedorCreate(PropostaFornecedorBase):
 
 
 class PropostaFornecedorUpdate(PropostaFornecedorBase):
+    valor_total: Optional[Decimal] = Field(None, ge=0)
     desconto_total: Optional[Decimal] = Field(None, ge=0, le=100)
 
 
