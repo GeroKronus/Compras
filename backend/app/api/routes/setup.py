@@ -27,7 +27,7 @@ router = APIRouter()
 @router.get("/version")
 def get_version():
     """Retorna versão do backend"""
-    return {"version": "1.0042", "endpoint": "setup/version"}
+    return {"version": "1.0043", "endpoint": "setup/version"}
 
 
 class SetupRequest(BaseModel):
@@ -759,6 +759,12 @@ def forcar_reprocessamento_email(email_id: int):
     except Exception as e:
         import traceback
         return {"erro": str(e), "traceback": traceback.format_exc()}
+
+
+@router.get("/teste-simples")
+def teste_simples():
+    """Endpoint de teste simples"""
+    return {"ok": True, "mensagem": "Endpoint funcionando"}
 
 
 @router.post("/processar-emails/{tenant_id}")
