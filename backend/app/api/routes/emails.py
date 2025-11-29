@@ -72,6 +72,76 @@ class ProcessarEmailsResponse(BaseModel):
     erros: int
 
 
+# ============ ENDPOINTS DE CONFIG (devem vir antes de /{email_id}) ============
+
+@router.get("/config/status")
+def verificar_config_email():
+    """
+    Verificar se o servico de email e IA estao configurados.
+    """
+    import os
+    chave_ia = os.environ.get('ANTHROPIC_API_KEY', '')
+
+    return {
+        "configurado": email_service.is_configured,
+        "smtp_host": settings.SMTP_HOST,
+        "smtp_port": settings.SMTP_PORT,
+        "smtp_user_configurado": bool(settings.SMTP_USER),
+        "smtp_password_configurado": bool(settings.SMTP_PASSWORD),
+        "email_from": settings.EMAIL_FROM or "(usa SMTP_USER)",
+        "ia_chave_configurada": bool(chave_ia),
+        "ia_chave_inicio": chave_ia[:25] if chave_ia else "(vazio)",
+        "ia_chave_fim": chave_ia[-15:] if chave_ia else "(vazio)",
+        "ia_chave_tamanho": len(chave_ia)
+    }
+
+
+@router.get("/config/ia-status")
+def verificar_config_ia():
+    """
+    Verificar se a IA (Anthropic) esta configurada.
+    """
+    import os
+
+    # Pegar direto do ambiente para evitar problemas
+    chave_env = os.environ.get('ANTHROPIC_API_KEY', '')
+    chave_settings = getattr(settings, 'ANTHROPIC_API_KEY', '') or ''
+
+    return {
+        "anthropic_configurado_env": bool(chave_env),
+        "anthropic_configurado_settings": bool(chave_settings),
+        "chave_env_inicio": chave_env[:20] + "..." if len(chave_env) > 20 else chave_env if chave_env else "(vazio)",
+        "chave_env_fim": "..." + chave_env[-10:] if len(chave_env) > 10 else chave_env if chave_env else "(vazio)",
+        "chave_env_tamanho": len(chave_env),
+        "chave_settings_inicio": chave_settings[:20] + "..." if len(chave_settings) > 20 else chave_settings if chave_settings else "(vazio)",
+        "chave_settings_tamanho": len(chave_settings)
+    }
+
+
+@router.get("/config/ia-testar")
+def testar_conexao_ia():
+    """
+    Testa a conexao com a API da Anthropic.
+    """
+    from app.services.ai_service import ai_service
+
+    if not ai_service.is_available:
+        return {"teste": "FALHOU", "erro": "ai_service nao disponivel"}
+
+    try:
+        response = ai_service.client.messages.create(
+            model=ai_service.MODEL,
+            max_tokens=10,
+            messages=[{"role": "user", "content": "Diga apenas: OK"}]
+        )
+        return {
+            "teste": "OK",
+            "resposta": response.content[0].text
+        }
+    except Exception as e:
+        return {"teste": "FALHOU", "erro": str(e)}
+
+
 # ============ ENDPOINTS ============
 
 @router.post("/processar", response_model=ProcessarEmailsResponse)
@@ -454,74 +524,6 @@ class TesteEmailRequest(BaseModel):
     destinatario: str
     assunto: Optional[str] = "Teste de Email - Sistema de Compras"
     mensagem: Optional[str] = "Este e um email de teste do Sistema de Gestao de Compras."
-
-
-@router.get("/config/status")
-def verificar_config_email():
-    """
-    Verificar se o servico de email e IA estao configurados.
-    """
-    import os
-    chave_ia = os.environ.get('ANTHROPIC_API_KEY', '')
-
-    return {
-        "configurado": email_service.is_configured,
-        "smtp_host": settings.SMTP_HOST,
-        "smtp_port": settings.SMTP_PORT,
-        "smtp_user_configurado": bool(settings.SMTP_USER),
-        "smtp_password_configurado": bool(settings.SMTP_PASSWORD),
-        "email_from": settings.EMAIL_FROM or "(usa SMTP_USER)",
-        "ia_chave_configurada": bool(chave_ia),
-        "ia_chave_inicio": chave_ia[:25] if chave_ia else "(vazio)",
-        "ia_chave_fim": chave_ia[-15:] if chave_ia else "(vazio)",
-        "ia_chave_tamanho": len(chave_ia)
-    }
-
-
-@router.get("/config/ia-status")
-def verificar_config_ia():
-    """
-    Verificar se a IA (Anthropic) esta configurada.
-    """
-    import os
-
-    # Pegar direto do ambiente para evitar problemas
-    chave_env = os.environ.get('ANTHROPIC_API_KEY', '')
-    chave_settings = getattr(settings, 'ANTHROPIC_API_KEY', '') or ''
-
-    return {
-        "anthropic_configurado_env": bool(chave_env),
-        "anthropic_configurado_settings": bool(chave_settings),
-        "chave_env_inicio": chave_env[:20] + "..." if len(chave_env) > 20 else chave_env if chave_env else "(vazio)",
-        "chave_env_fim": "..." + chave_env[-10:] if len(chave_env) > 10 else chave_env if chave_env else "(vazio)",
-        "chave_env_tamanho": len(chave_env),
-        "chave_settings_inicio": chave_settings[:20] + "..." if len(chave_settings) > 20 else chave_settings if chave_settings else "(vazio)",
-        "chave_settings_tamanho": len(chave_settings)
-    }
-
-
-@router.get("/config/ia-testar")
-def testar_conexao_ia():
-    """
-    Testa a conexao com a API da Anthropic.
-    """
-    from app.services.ai_service import ai_service
-
-    if not ai_service.is_available:
-        return {"teste": "FALHOU", "erro": "ai_service nao disponivel"}
-
-    try:
-        response = ai_service.client.messages.create(
-            model=ai_service.MODEL,
-            max_tokens=10,
-            messages=[{"role": "user", "content": "Diga apenas: OK"}]
-        )
-        return {
-            "teste": "OK",
-            "resposta": response.content[0].text
-        }
-    except Exception as e:
-        return {"teste": "FALHOU", "erro": str(e)}
 
 
 @router.get("/teste/{email_destino}")
