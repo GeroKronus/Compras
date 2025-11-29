@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     # JWT
     SECRET_KEY: str = "sua-chave-secreta-muito-forte-aqui-min-32-caracteres-importante"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 525600  # 1 ano (365 dias)
 
     # API
     API_V1_STR: str = "/api/v1"
