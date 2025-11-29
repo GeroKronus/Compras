@@ -337,32 +337,39 @@ def registrar_recebimento_proposta(
 
 # ============ PROPOSTAS ============
 
-@router.get("/solicitacoes/{solicitacao_id}/propostas", response_model=PropostaFornecedorListResponse)
+@router.get("/solicitacoes/{solicitacao_id}/propostas")
 def listar_propostas_solicitacao(
     solicitacao_id: int,
     db: Session = Depends(get_db),
     tenant_id: int = Depends(get_current_tenant_id)
 ):
     """Listar todas as propostas de uma solicitacao"""
-    solicitacao = get_by_id(db, SolicitacaoCotacao, solicitacao_id, tenant_id, error_message="Solicitacao nao encontrada")
+    try:
+        solicitacao = get_by_id(db, SolicitacaoCotacao, solicitacao_id, tenant_id, error_message="Solicitacao nao encontrada")
 
-    # Buscar propostas pela solicitacao (tenant validado via solicitacao)
-    # Tambem corrige tenant_id das propostas se estiver incorreto
-    propostas = db.query(PropostaFornecedor).filter(
-        PropostaFornecedor.solicitacao_id == solicitacao_id
-    ).all()
+        # Buscar propostas pela solicitacao (tenant validado via solicitacao)
+        propostas = db.query(PropostaFornecedor).filter(
+            PropostaFornecedor.solicitacao_id == solicitacao_id
+        ).all()
 
-    # Corrigir tenant_id das propostas automaticamente
-    corrigidas = 0
-    for p in propostas:
-        if p.tenant_id != solicitacao.tenant_id:
-            p.tenant_id = solicitacao.tenant_id
-            corrigidas += 1
-    if corrigidas > 0:
-        db.commit()
+        # Corrigir tenant_id das propostas automaticamente
+        corrigidas = 0
+        for p in propostas:
+            if p.tenant_id != solicitacao.tenant_id:
+                p.tenant_id = solicitacao.tenant_id
+                corrigidas += 1
+        if corrigidas > 0:
+            db.commit()
 
-    items = [_enrich_proposta_response(p, db) for p in propostas]
-    return {"items": items, "total": len(items)}
+        items = [_enrich_proposta_response(p, db) for p in propostas]
+        return {"items": items, "total": len(items)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"[ERRO] listar_propostas_solicitacao: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erro ao listar propostas: {str(e)}")
 
 
 @router.post("/propostas", response_model=PropostaFornecedorResponse, status_code=201)
