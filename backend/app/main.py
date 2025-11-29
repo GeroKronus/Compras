@@ -42,7 +42,7 @@ def health_check():
 @app.get("/api/v1/version")
 def get_api_version():
     """Retorna versão do backend para verificar deploy"""
-    return {"version": "1.0063", "status": "ok"}
+    return {"version": "1.0064", "status": "ok"}
 
 # Debug: testar pypdf
 @app.get("/debug/pypdf")
@@ -146,27 +146,122 @@ def reprocessar_email(email_id: int):
         # Extrair dados via IA
         try:
             from app.services.ai_service import ai_service
+            import re
+            import json
 
             dados_extraidos = ai_service.extrair_dados_proposta_email(corpo, conteudo_pdf)
             resultado["dados_extraidos"] = dados_extraidos
             resultado["etapas"].append("IA extraiu dados")
 
-            # Atualizar registro
-            import json
-            email_proc.tipo = "resposta_cotacao"  # Assume que emails com PDF são respostas
+            # Atualizar registro do email
+            email_proc.tipo = "resposta_cotacao"
             email_proc.dados_extraidos = json.dumps(dados_extraidos)
             email_proc.status = "processado"
             email_proc.data_processamento = datetime.utcnow()
+            resultado["etapas"].append("email atualizado")
 
-            # Vincular proposta usando método do classifier
-            classificacao = {
-                "tipo": "resposta_cotacao",
-                "dados_extraidos": dados_extraidos
-            }
-            email_classifier._vincular_proposta(
-                db, email_proc, classificacao, email_proc.tenant_id
-            )
-            resultado["etapas"].append("proposta vinculada")
+            # Tentar encontrar solicitação pelo assunto (SC-XXXX-XXXXX)
+            from app.models.cotacao import SolicitacaoCotacao, PropostaFornecedor, ItemSolicitacao, ItemProposta
+            from app.models.fornecedor import Fornecedor
+
+            match = re.search(r'SC-\d{4}-\d{5}', email_proc.assunto or "")
+            if match:
+                numero_solicitacao = match.group()
+                solicitacao = db.query(SolicitacaoCotacao).filter(
+                    SolicitacaoCotacao.numero == numero_solicitacao,
+                    SolicitacaoCotacao.tenant_id == email_proc.tenant_id
+                ).first()
+
+                if solicitacao:
+                    email_proc.solicitacao_id = solicitacao.id
+                    resultado["solicitacao_id"] = solicitacao.id
+                    resultado["etapas"].append(f"solicitacao encontrada: {numero_solicitacao}")
+
+                    # Buscar fornecedor pelo email remetente
+                    fornecedor = db.query(Fornecedor).filter(
+                        Fornecedor.email == email_proc.remetente,
+                        Fornecedor.tenant_id == email_proc.tenant_id
+                    ).first()
+
+                    if fornecedor:
+                        email_proc.fornecedor_id = fornecedor.id
+                        resultado["fornecedor_id"] = fornecedor.id
+                        resultado["etapas"].append(f"fornecedor: {fornecedor.nome}")
+
+                        # Buscar ou criar proposta
+                        proposta = db.query(PropostaFornecedor).filter(
+                            PropostaFornecedor.solicitacao_id == solicitacao.id,
+                            PropostaFornecedor.fornecedor_id == fornecedor.id,
+                            PropostaFornecedor.tenant_id == email_proc.tenant_id
+                        ).first()
+
+                        if not proposta:
+                            proposta = PropostaFornecedor(
+                                solicitacao_id=solicitacao.id,
+                                fornecedor_id=fornecedor.id,
+                                tenant_id=email_proc.tenant_id,
+                                status="RECEBIDA"
+                            )
+                            db.add(proposta)
+                            db.flush()
+                            resultado["etapas"].append("proposta criada")
+                        else:
+                            resultado["etapas"].append("proposta existente")
+
+                        # Atualizar dados da proposta
+                        if dados_extraidos.get('prazo_entrega_dias'):
+                            proposta.prazo_entrega = dados_extraidos['prazo_entrega_dias']
+                        if dados_extraidos.get('condicoes_pagamento'):
+                            proposta.condicoes_pagamento = dados_extraidos['condicoes_pagamento']
+                        proposta.status = "RECEBIDA"
+
+                        # Vincular email à proposta
+                        email_proc.proposta_id = proposta.id
+
+                        # Criar/atualizar itens da proposta
+                        itens_extraidos = dados_extraidos.get('itens', [])
+                        itens_solicitacao = db.query(ItemSolicitacao).filter(
+                            ItemSolicitacao.solicitacao_id == solicitacao.id
+                        ).order_by(ItemSolicitacao.id).all()
+
+                        valor_total = 0
+                        for idx, item_sol in enumerate(itens_solicitacao):
+                            # Buscar preço correspondente
+                            preco = None
+                            for item_ext in itens_extraidos:
+                                if item_ext.get('indice') == idx or item_ext.get('indice') == idx + 1:
+                                    preco = item_ext.get('preco_unitario')
+                                    break
+                            if preco is None and idx < len(itens_extraidos):
+                                preco = itens_extraidos[idx].get('preco_unitario')
+
+                            if preco:
+                                # Buscar ou criar item_proposta
+                                item_proposta = db.query(ItemProposta).filter(
+                                    ItemProposta.proposta_id == proposta.id,
+                                    ItemProposta.item_solicitacao_id == item_sol.id
+                                ).first()
+
+                                if not item_proposta:
+                                    item_proposta = ItemProposta(
+                                        proposta_id=proposta.id,
+                                        item_solicitacao_id=item_sol.id,
+                                        tenant_id=email_proc.tenant_id
+                                    )
+                                    db.add(item_proposta)
+
+                                item_proposta.preco_unitario = preco
+                                valor_total += preco * item_sol.quantidade
+
+                        proposta.valor_total = valor_total
+                        resultado["valor_total"] = valor_total
+                        resultado["etapas"].append(f"itens atualizados, valor_total={valor_total}")
+                    else:
+                        resultado["etapas"].append("fornecedor NAO encontrado")
+                else:
+                    resultado["etapas"].append(f"solicitacao {numero_solicitacao} NAO encontrada")
+            else:
+                resultado["etapas"].append("numero SC nao encontrado no assunto")
 
             db.commit()
             resultado["sucesso"] = True
