@@ -160,58 +160,35 @@ def diagnostico_cotacoes(db: Session = Depends(get_db)):
     Endpoint temporário de diagnóstico para verificar estado das cotações.
     SEM AUTENTICAÇÃO - apenas para debug.
     """
+    from sqlalchemy import text
+
+    result = {"solicitacoes": [], "propostas": []}
+
     try:
-        # Buscar todas as solicitações - usando texto SQL puro
-        from sqlalchemy import text
-
-        result = {"solicitacoes": [], "propostas": [], "itens_propostas": []}
-
-        # Solicitações
-        sol_query = text("SELECT id, numero, titulo, status, tenant_id FROM solicitacoes_cotacao")
-        solicitacoes = db.execute(sol_query).fetchall()
-        for row in solicitacoes:
+        # Solicitações - query simples
+        sol_result = db.execute(text("SELECT id, numero, titulo, status, tenant_id FROM solicitacoes_cotacao")).fetchall()
+        for row in sol_result:
             result["solicitacoes"].append({
                 "id": row[0], "numero": row[1], "titulo": row[2],
-                "status": row[3], "tenant_id": row[4]
+                "status": str(row[3]) if row[3] else None, "tenant_id": row[4]
             })
+    except Exception as e:
+        result["erro_solicitacoes"] = str(e)
 
-        # Propostas
-        prop_query = text("""
-            SELECT p.id, p.solicitacao_id, p.fornecedor_id, p.status, p.valor_total, p.tenant_id,
-                   f.razao_social as fornecedor_nome
-            FROM propostas_fornecedor p
-            LEFT JOIN fornecedores f ON p.fornecedor_id = f.id
-        """)
-        propostas = db.execute(prop_query).fetchall()
-        for row in propostas:
+    try:
+        # Propostas - query simples sem JOIN
+        prop_result = db.execute(text("SELECT id, solicitacao_id, fornecedor_id, status, valor_total, tenant_id FROM propostas_fornecedor")).fetchall()
+        for row in prop_result:
             result["propostas"].append({
                 "id": row[0], "solicitacao_id": row[1], "fornecedor_id": row[2],
-                "status": row[3], "valor_total": float(row[4]) if row[4] else None,
-                "tenant_id": row[5], "fornecedor_nome": row[6]
+                "status": str(row[3]) if row[3] else None,
+                "valor_total": float(row[4]) if row[4] else None,
+                "tenant_id": row[5]
             })
-
-        # Itens das propostas
-        item_query = text("""
-            SELECT ip.id, ip.proposta_id, ip.item_solicitacao_id, ip.quantidade_disponivel, ip.preco_unitario,
-                   isl.produto_id, pr.codigo as produto_codigo, pr.nome as produto_nome
-            FROM itens_proposta ip
-            LEFT JOIN itens_solicitacao isl ON ip.item_solicitacao_id = isl.id
-            LEFT JOIN produtos pr ON isl.produto_id = pr.id
-        """)
-        itens = db.execute(item_query).fetchall()
-        for row in itens:
-            result["itens_propostas"].append({
-                "id": row[0], "proposta_id": row[1], "item_solicitacao_id": row[2],
-                "quantidade": float(row[3]) if row[3] else None,
-                "preco_unitario": float(row[4]) if row[4] else None,
-                "produto_id": row[5], "produto_codigo": row[6], "produto_nome": row[7]
-            })
-
-        return result
-
     except Exception as e:
-        import traceback
-        return {"erro": str(e), "tipo": type(e).__name__, "traceback": traceback.format_exc()}
+        result["erro_propostas"] = str(e)
+
+    return result
 
 
 @router.post("/corrigir-tenant-ids")
