@@ -43,6 +43,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
     # Prefixos de rotas públicas (para rotas dinâmicas)
     PUBLIC_PREFIXES = [
         "/api/v1/emails/teste/",  # Teste de email
+        "/api/v1/setup/debug-propostas/",  # Debug propostas
     ]
 
     async def dispatch(self, request: Request, call_next):

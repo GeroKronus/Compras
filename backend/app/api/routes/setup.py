@@ -27,7 +27,7 @@ router = APIRouter()
 @router.get("/version")
 def get_version():
     """Retorna versão do backend"""
-    return {"version": "1.0033", "endpoint": "setup/version"}
+    return {"version": "1.0034", "endpoint": "setup/version"}
 
 
 class SetupRequest(BaseModel):
@@ -202,6 +202,69 @@ def diagnostico_cotacoes():
     except Exception as e:
         import traceback
         return {"erro": str(e), "trace": traceback.format_exc()}
+
+
+@router.get("/debug-propostas/{solicitacao_id}")
+def debug_propostas(solicitacao_id: int):
+    """
+    DEBUG: Simula o endpoint de propostas sem autenticação.
+    Testa EXATAMENTE a mesma lógica do endpoint real.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.models.cotacao import SolicitacaoCotacao, PropostaFornecedor, ItemProposta
+        from app.models.fornecedor import Fornecedor
+        from app.models.produto import Produto
+        from app.models.cotacao import ItemSolicitacao
+
+        db = SessionLocal()
+        try:
+            # Buscar solicitacao
+            solicitacao = db.query(SolicitacaoCotacao).filter(
+                SolicitacaoCotacao.id == solicitacao_id
+            ).first()
+
+            if not solicitacao:
+                return {"erro": f"Solicitacao {solicitacao_id} nao encontrada"}
+
+            # Buscar propostas SEM filtro tenant_id (igual ao endpoint corrigido)
+            propostas = db.query(PropostaFornecedor).filter(
+                PropostaFornecedor.solicitacao_id == solicitacao_id
+            ).all()
+
+            # Montar resposta detalhada
+            resultado = {
+                "solicitacao": {
+                    "id": solicitacao.id,
+                    "numero": solicitacao.numero,
+                    "tenant_id": solicitacao.tenant_id
+                },
+                "total_propostas": len(propostas),
+                "propostas": []
+            }
+
+            for p in propostas:
+                fornecedor = db.query(Fornecedor).filter(Fornecedor.id == p.fornecedor_id).first()
+
+                # Buscar itens da proposta
+                itens_count = db.query(ItemProposta).filter(ItemProposta.proposta_id == p.id).count()
+
+                resultado["propostas"].append({
+                    "id": p.id,
+                    "fornecedor_id": p.fornecedor_id,
+                    "fornecedor_nome": fornecedor.razao_social if fornecedor else None,
+                    "status": str(p.status) if p.status else None,
+                    "valor_total": float(p.valor_total) if p.valor_total else None,
+                    "tenant_id": p.tenant_id,
+                    "itens_count": itens_count
+                })
+
+            return resultado
+        finally:
+            db.close()
+    except Exception as e:
+        import traceback
+        return {"erro": str(e), "traceback": traceback.format_exc()}
 
 
 @router.post("/corrigir-tenant-ids")
