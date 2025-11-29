@@ -827,44 +827,80 @@ def limpar_emails_e_propostas(tenant_id: int):
         return {"erro": str(e), "traceback": traceback.format_exc()}
 
 
+@router.get("/test-pypdf")
+def test_pypdf():
+    """Debug: Verifica se pypdf está funcionando."""
+    try:
+        from pypdf import PdfReader
+        return {"pypdf_ok": True, "versao": "pypdf importado com sucesso"}
+    except ImportError as e:
+        return {"pypdf_ok": False, "erro": str(e)}
+    except Exception as e:
+        import traceback
+        return {"pypdf_ok": False, "erro": str(e), "traceback": traceback.format_exc()}
+
+
 @router.get("/debug-email/{email_uid}")
 def debug_email(email_uid: str):
     """
     Debug: Mostra extração de corpo e PDF de um email específico.
     Use o UID do email (ex: 193 para o email da Kronus).
     """
+    resultado = {"email_uid": email_uid, "etapas": []}
     try:
         import imaplib
         import email as email_lib
+        resultado["etapas"].append("imports ok")
+
         from app.services.email_classifier import email_classifier
         from app.config import settings
+        resultado["etapas"].append("email_classifier importado")
 
         mail = imaplib.IMAP4_SSL(settings.IMAP_HOST or 'imappro.zoho.com', settings.IMAP_PORT or 993)
+        resultado["etapas"].append("conectado ao IMAP")
+
         mail.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+        resultado["etapas"].append("login ok")
+
         mail.select('INBOX')
+        resultado["etapas"].append("INBOX selecionada")
 
         result, msg_data = mail.fetch(email_uid.encode(), '(RFC822)')
+        resultado["etapas"].append(f"email fetchado: {result}")
+
         raw_email = msg_data[0][1]
         msg = email_lib.message_from_bytes(raw_email)
+        resultado["etapas"].append("email parseado")
 
         subject = msg.get('Subject', '')
+        resultado["subject"] = subject
+
         corpo = email_classifier._extrair_corpo(msg)
-        conteudo_pdf = email_classifier._extrair_anexos_pdf(msg)
+        resultado["corpo_tamanho"] = len(corpo) if corpo else 0
+        resultado["corpo_preview"] = corpo[:300] if corpo else "(vazio)"
+        resultado["etapas"].append("corpo extraido")
+
+        try:
+            conteudo_pdf = email_classifier._extrair_anexos_pdf(msg)
+            resultado["pdf_tamanho"] = len(conteudo_pdf) if conteudo_pdf else 0
+            resultado["pdf_preview"] = conteudo_pdf[:500] if conteudo_pdf else "(nenhum PDF)"
+            resultado["pdf_encontrado"] = bool(conteudo_pdf)
+            resultado["etapas"].append("PDF extraido" if conteudo_pdf else "nenhum PDF")
+        except Exception as pdf_err:
+            import traceback
+            resultado["pdf_erro"] = str(pdf_err)
+            resultado["pdf_traceback"] = traceback.format_exc()
+            resultado["etapas"].append(f"erro PDF: {pdf_err}")
 
         mail.logout()
+        resultado["etapas"].append("logout ok")
+        return resultado
 
-        return {
-            "email_uid": email_uid,
-            "subject": subject,
-            "corpo_tamanho": len(corpo) if corpo else 0,
-            "corpo_preview": corpo[:300] if corpo else "(vazio)",
-            "pdf_tamanho": len(conteudo_pdf) if conteudo_pdf else 0,
-            "pdf_preview": conteudo_pdf[:500] if conteudo_pdf else "(nenhum PDF)",
-            "pdf_encontrado": bool(conteudo_pdf)
-        }
     except Exception as e:
         import traceback
-        return {"erro": str(e), "traceback": traceback.format_exc()}
+        resultado["erro"] = str(e)
+        resultado["traceback"] = traceback.format_exc()
+        return resultado
 
 
 @router.post("/processar-emails/{tenant_id}")
