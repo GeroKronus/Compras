@@ -27,7 +27,7 @@ router = APIRouter()
 @router.get("/version")
 def get_version():
     """Retorna versão do backend"""
-    return {"version": "1.0048", "endpoint": "setup/version"}
+    return {"version": "1.0049", "endpoint": "setup/version"}
 
 
 class SetupRequest(BaseModel):
@@ -176,7 +176,8 @@ def diagnostico_cotacoes():
             # Contagem direta via SQL
             count_sol = db.execute(text("SELECT COUNT(*) FROM solicitacoes_cotacao")).scalar()
             count_prop = db.execute(text("SELECT COUNT(*) FROM propostas_fornecedor")).scalar()
-            dados["contagens"] = {"solicitacoes": count_sol, "propostas": count_prop}
+            count_emails = db.execute(text("SELECT COUNT(*) FROM emails_processados")).scalar()
+            dados["contagens"] = {"solicitacoes": count_sol, "propostas": count_prop, "emails_processados": count_emails}
 
             # Solicitações via SQL
             sol_rows = db.execute(text("SELECT id, numero, titulo, status, tenant_id FROM solicitacoes_cotacao")).fetchall()
@@ -776,35 +777,23 @@ def limpar_emails_e_propostas(tenant_id: int):
     """
     try:
         from app.database import SessionLocal
-        from app.models.email_processado import EmailProcessado
-        from app.models.cotacao import PropostaFornecedor, ItemProposta
         from sqlalchemy import text
 
         db = SessionLocal()
         try:
-            deletados = {
-                "itens_proposta": 0,
-                "propostas": 0,
-                "emails": 0
-            }
+            deletados = {}
 
-            # 1. Deletar itens_proposta
-            itens_del = db.query(ItemProposta).filter(
-                ItemProposta.tenant_id == tenant_id
-            ).delete(synchronize_session=False)
-            deletados["itens_proposta"] = itens_del
+            # 1. Deletar itens_proposta via SQL
+            result1 = db.execute(text(f"DELETE FROM itens_proposta WHERE tenant_id = {tenant_id}"))
+            deletados["itens_proposta"] = result1.rowcount
 
-            # 2. Deletar propostas
-            props_del = db.query(PropostaFornecedor).filter(
-                PropostaFornecedor.tenant_id == tenant_id
-            ).delete(synchronize_session=False)
-            deletados["propostas"] = props_del
+            # 2. Deletar propostas via SQL
+            result2 = db.execute(text(f"DELETE FROM propostas_fornecedor WHERE tenant_id = {tenant_id}"))
+            deletados["propostas"] = result2.rowcount
 
-            # 3. Deletar emails processados
-            emails_del = db.query(EmailProcessado).filter(
-                EmailProcessado.tenant_id == tenant_id
-            ).delete(synchronize_session=False)
-            deletados["emails"] = emails_del
+            # 3. Deletar emails processados via SQL
+            result3 = db.execute(text(f"DELETE FROM emails_processados WHERE tenant_id = {tenant_id}"))
+            deletados["emails"] = result3.rowcount
 
             db.commit()
 
