@@ -42,7 +42,7 @@ def health_check():
 @app.get("/api/v1/version")
 def get_api_version():
     """Retorna versão do backend para verificar deploy"""
-    return {"version": "1.0068", "status": "ok"}
+    return {"version": "1.0069", "status": "ok"}
 
 # Debug: testar pypdf
 @app.get("/debug/pypdf")
@@ -252,7 +252,7 @@ def reprocessar_email(email_id: int):
                                     db.add(item_proposta)
 
                                 item_proposta.preco_unitario = preco
-                                valor_total += preco * item_sol.quantidade
+                                valor_total += float(preco) * float(item_sol.quantidade)
 
                         proposta.valor_total = valor_total
                         resultado["valor_total"] = valor_total
