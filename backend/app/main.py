@@ -110,8 +110,11 @@ def startup_event():
 
     # Iniciar job de verificacao de emails automaticamente
     # Pode ser desabilitado com ENABLE_SCHEDULED_JOBS=false
-    enable_jobs = getattr(settings, 'ENABLE_SCHEDULED_JOBS', True)  # True por padrão
-    if enable_jobs or str(enable_jobs).lower() not in ('false', '0', 'no'):
+    enable_jobs = getattr(settings, 'ENABLE_SCHEDULED_JOBS', True)
+    # Converter para bool corretamente (variaveis de ambiente sao strings)
+    if isinstance(enable_jobs, str):
+        enable_jobs = enable_jobs.lower() not in ('false', '0', 'no', '')
+    if enable_jobs:
         try:
             from app.jobs.email_job import iniciar_scheduler
             intervalo = int(getattr(settings, 'EMAIL_CHECK_INTERVAL', 5))

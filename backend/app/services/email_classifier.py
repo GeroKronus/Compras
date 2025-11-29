@@ -153,6 +153,7 @@ class EmailClassifier:
         from datetime import timedelta
 
         emails = []
+        mail = None
 
         try:
             mail = imaplib.IMAP4_SSL(
@@ -167,9 +168,11 @@ class EmailClassifier:
             status, messages = mail.search(None, f'(SINCE "{data_inicio}")')
 
             if status != 'OK':
+                print(f"[CLASSIFICADOR] Erro na busca IMAP: status={status}")
                 return []
 
             email_ids = messages[0].split()
+            print(f"[CLASSIFICADOR] Encontrados {len(email_ids)} emails nos ultimos {dias_atras} dias")
 
             for email_id in email_ids:
                 try:
@@ -226,10 +229,16 @@ class EmailClassifier:
                     print(f"[CLASSIFICADOR] Erro ao processar email ID {email_id}: {e}")
                     continue
 
-            mail.logout()
-
         except Exception as e:
             print(f"[CLASSIFICADOR] Erro ao conectar IMAP: {e}")
+
+        finally:
+            # Garantir logout mesmo em caso de erro
+            if mail:
+                try:
+                    mail.logout()
+                except:
+                    pass
 
         return emails
 
@@ -521,10 +530,10 @@ class EmailClassifier:
         """
         from app.models.cotacao import StatusSolicitacao
 
-        # Buscar solicitacoes em aberto do tenant
+        # Buscar solicitacoes em aberto do tenant (ENVIADA ou EM_COTACAO)
         solicitacoes_abertas = db.query(SolicitacaoCotacao).filter(
             SolicitacaoCotacao.tenant_id == tenant_id,
-            SolicitacaoCotacao.status == StatusSolicitacao.EM_COTACAO
+            SolicitacaoCotacao.status.in_([StatusSolicitacao.ENVIADA, StatusSolicitacao.EM_COTACAO])
         ).all()
 
         if not solicitacoes_abertas:
@@ -831,6 +840,7 @@ Responda APENAS com JSON no formato:
         proposta = PropostaFornecedor(
             solicitacao_id=email.solicitacao_id,
             fornecedor_id=email.fornecedor_id,
+            tenant_id=email.tenant_id,  # IMPORTANTE: definir tenant_id
             prazo_entrega=dados_extraidos.get('prazo_entrega_dias'),
             condicoes_pagamento=dados_extraidos.get('condicoes_pagamento'),
             frete_incluso=dados_extraidos.get('frete_incluso', False),

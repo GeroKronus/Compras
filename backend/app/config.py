@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     IMAP_PORT: int = 993
 
     # Jobs
-    ENABLE_SCHEDULED_JOBS: bool = False  # Desabilitado até ter a API key
+    ENABLE_SCHEDULED_JOBS: bool = True  # Habilitado por padrao em producao
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="after")
     @classmethod
