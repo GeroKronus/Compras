@@ -192,18 +192,19 @@ def diagnostico_cotacoes(db: Session = Depends(get_db)):
 
         # Itens das propostas
         item_query = text("""
-            SELECT ip.id, ip.proposta_id, ip.produto_id, ip.quantidade, ip.preco_unitario,
-                   pr.codigo as produto_codigo, pr.nome as produto_nome
+            SELECT ip.id, ip.proposta_id, ip.item_solicitacao_id, ip.quantidade_disponivel, ip.preco_unitario,
+                   isl.produto_id, pr.codigo as produto_codigo, pr.nome as produto_nome
             FROM itens_proposta ip
-            LEFT JOIN produtos pr ON ip.produto_id = pr.id
+            LEFT JOIN itens_solicitacao isl ON ip.item_solicitacao_id = isl.id
+            LEFT JOIN produtos pr ON isl.produto_id = pr.id
         """)
         itens = db.execute(item_query).fetchall()
         for row in itens:
             result["itens_propostas"].append({
-                "id": row[0], "proposta_id": row[1], "produto_id": row[2],
+                "id": row[0], "proposta_id": row[1], "item_solicitacao_id": row[2],
                 "quantidade": float(row[3]) if row[3] else None,
                 "preco_unitario": float(row[4]) if row[4] else None,
-                "produto_codigo": row[5], "produto_nome": row[6]
+                "produto_id": row[5], "produto_codigo": row[6], "produto_nome": row[7]
             })
 
         return result
