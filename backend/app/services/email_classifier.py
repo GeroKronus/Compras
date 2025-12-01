@@ -24,6 +24,10 @@ class EmailClassifier:
     2. REMETENTE - Associa pelo email do fornecedor cadastrado
     3. IA - Analise de conteudo pela Claude para emails orfaos
     4. MANUAL - Emails que nao puderam ser classificados automaticamente
+
+    REGRAS IMPORTANTES:
+    - Emails duplicados (mesmo assunto): sempre usa o MAIS RECENTE
+    - Numeração de SCs: NUNCA reinicia, sempre incrementa
     """
 
     # Padroes para extrair ID da solicitacao do assunto
@@ -130,8 +134,10 @@ class EmailClassifier:
                             if dados_extraidos:
                                 email_processado.dados_extraidos = json.dumps(dados_extraidos)
                                 # Atualizar proposta com os dados extraidos
+                                # REGRA: Só atualiza se este email for o mais recente
                                 self._atualizar_proposta_com_dados(
-                                    db, tenant_id, solicitacao_id, fornecedor_id, dados_extraidos
+                                    db, tenant_id, solicitacao_id, fornecedor_id, dados_extraidos,
+                                    data_email=email_processado.data_recebimento
                                 )
 
                     else:
@@ -811,16 +817,63 @@ Responda APENAS com JSON no formato:
             print(f"[CLASSIFICADOR] Erro ao criar/marcar proposta como recebida: {e}")
             return None
 
+    def _email_eh_mais_recente(
+        self,
+        db: Session,
+        tenant_id: int,
+        solicitacao_id: int,
+        fornecedor_id: int,
+        data_email_atual: datetime
+    ) -> bool:
+        """
+        Verifica se o email atual é o mais recente para uma solicitação+fornecedor.
+
+        REGRA: Quando há múltiplos emails com mesmo assunto (mesma solicitação),
+        usar SEMPRE o email mais recente.
+
+        Args:
+            db: Sessao do banco
+            tenant_id: ID do tenant
+            solicitacao_id: ID da solicitacao
+            fornecedor_id: ID do fornecedor
+            data_email_atual: Data de recebimento do email sendo processado
+
+        Returns:
+            True se o email atual é o mais recente ou não há emails anteriores
+        """
+        # Buscar email mais recente já processado para esta solicitação+fornecedor
+        email_mais_recente = db.query(EmailProcessado).filter(
+            EmailProcessado.tenant_id == tenant_id,
+            EmailProcessado.solicitacao_id == solicitacao_id,
+            EmailProcessado.fornecedor_id == fornecedor_id,
+            EmailProcessado.dados_extraidos.isnot(None)  # Só considera emails com dados extraídos
+        ).order_by(EmailProcessado.data_recebimento.desc()).first()
+
+        if not email_mais_recente:
+            # Não há emails anteriores processados
+            return True
+
+        # Comparar datas
+        if data_email_atual >= email_mais_recente.data_recebimento:
+            return True
+
+        print(f"[CLASSIFICADOR] Email ignorado - existe email mais recente: "
+              f"atual={data_email_atual}, mais_recente={email_mais_recente.data_recebimento}")
+        return False
+
     def _atualizar_proposta_com_dados(
         self,
         db: Session,
         tenant_id: int,
         solicitacao_id: int,
         fornecedor_id: int,
-        dados_extraidos: dict
+        dados_extraidos: dict,
+        data_email: datetime = None
     ) -> Optional[int]:
         """
         Atualiza uma proposta existente com os dados extraidos do email
+
+        IMPORTANTE: Só atualiza se o email for o mais recente para esta solicitação+fornecedor
 
         Args:
             db: Sessao do banco
@@ -828,11 +881,18 @@ Responda APENAS com JSON no formato:
             solicitacao_id: ID da solicitacao
             fornecedor_id: ID do fornecedor
             dados_extraidos: Dados extraidos pela IA
+            data_email: Data de recebimento do email (para verificar se é o mais recente)
 
         Returns:
             ID da proposta atualizada ou None
         """
         from app.models.cotacao import ItemSolicitacao, ItemProposta
+
+        # Verificar se este email é o mais recente (se data fornecida)
+        if data_email:
+            if not self._email_eh_mais_recente(db, tenant_id, solicitacao_id, fornecedor_id, data_email):
+                print(f"[CLASSIFICADOR] Proposta NAO atualizada - email nao e o mais recente")
+                return None
 
         # Buscar proposta existente
         proposta = db.query(PropostaFornecedor).filter(

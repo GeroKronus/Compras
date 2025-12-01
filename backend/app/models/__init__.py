@@ -30,6 +30,7 @@ from app.models.email_processado import (
     MetodoClassificacao,
 )
 from app.models.auditoria_escolha import AuditoriaEscolhaFornecedor
+from app.models.sequencia import Sequencia
 
 __all__ = [
     "Base",

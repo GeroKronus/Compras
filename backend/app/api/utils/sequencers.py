@@ -1,5 +1,8 @@
 """
 Sequencers - Geradores de números sequenciais
+
+IMPORTANTE: Usa tabela 'sequencias' para garantir que números NUNCA reiniciem,
+mesmo se os registros forem deletados. A sequência é persistente e sempre incrementa.
 """
 from datetime import datetime
 from sqlalchemy.orm import Session
@@ -20,9 +23,12 @@ def generate_sequential_number(
     """
     Gera número sequencial no formato: PREFIX-AAAA-NNNNN
 
+    IMPORTANTE: Usa tabela 'sequencias' para garantir persistência.
+    Números NUNCA reiniciam, mesmo se registros forem deletados.
+
     Args:
         db: Sessão do banco
-        model: Modelo que possui campo 'numero'
+        model: Modelo que possui campo 'numero' (usado apenas para compatibilidade)
         prefix: Prefixo (ex: "SC", "PC", "NF")
         tenant_id: ID do tenant
         year: Ano (default: ano atual)
@@ -38,21 +44,45 @@ def generate_sequential_number(
         numero = generate_sequential_number(db, SolicitacaoCotacao, "SC", tenant_id)
         # Retorna: "SC-2025-00001"
     """
+    from app.models.sequencia import Sequencia
+
     ano = year or datetime.now().year
-    pattern = f"{prefix}-{ano}-%"
 
-    ultimo = db.query(func.max(model.numero)).filter(
-        model.tenant_id == tenant_id,
-        model.numero.like(pattern)
-    ).scalar()
+    # Buscar ou criar registro de sequência
+    sequencia = db.query(Sequencia).filter(
+        Sequencia.tenant_id == tenant_id,
+        Sequencia.prefixo == prefix,
+        Sequencia.ano == ano
+    ).first()
 
-    if ultimo:
-        # Extrai o número sequencial do formato PREFIX-AAAA-NNNNN
-        seq = int(ultimo.split("-")[-1]) + 1
-    else:
-        seq = 1
+    if not sequencia:
+        # Primeira vez: verificar se há registros existentes no modelo para migração
+        pattern = f"{prefix}-{ano}-%"
+        ultimo_existente = db.query(func.max(model.numero)).filter(
+            model.tenant_id == tenant_id,
+            model.numero.like(pattern)
+        ).scalar()
 
-    return f"{prefix}-{ano}-{seq:0{digits}d}"
+        ultimo_numero = 0
+        if ultimo_existente:
+            ultimo_numero = int(ultimo_existente.split("-")[-1])
+
+        sequencia = Sequencia(
+            tenant_id=tenant_id,
+            prefixo=prefix,
+            ano=ano,
+            ultimo_numero=ultimo_numero
+        )
+        db.add(sequencia)
+
+    # Incrementar sequência
+    sequencia.ultimo_numero += 1
+    proximo = sequencia.ultimo_numero
+
+    # Flush para garantir que o número seja reservado
+    db.flush()
+
+    return f"{prefix}-{ano}-{proximo:0{digits}d}"
 
 
 # Constantes de prefixos para padronização
