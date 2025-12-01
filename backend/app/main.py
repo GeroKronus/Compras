@@ -42,7 +42,7 @@ def health_check():
 @app.get("/api/v1/version")
 def get_api_version():
     """Retorna versão do backend para verificar deploy"""
-    return {"version": "1.0074", "status": "ok"}
+    return {"version": "1.0075", "status": "ok"}
 
 # Debug: testar pypdf
 @app.get("/debug/pypdf")
@@ -378,6 +378,67 @@ def limpar_tudo(tenant_id: int):
     except Exception as e:
         resultado["erro"] = str(e)
         resultado["traceback"] = traceback.format_exc()
+
+    return resultado
+
+
+@app.get("/debug/listar-imap")
+def listar_imap():
+    """Lista todos os emails do IMAP com datas para debug."""
+    import imaplib
+    import email as email_lib
+    from datetime import datetime, timedelta
+    from app.config import settings
+
+    resultado = {"emails": []}
+
+    try:
+        mail = imaplib.IMAP4_SSL(
+            settings.IMAP_HOST or 'imappro.zoho.com',
+            settings.IMAP_PORT or 993
+        )
+        mail.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+        mail.select('INBOX')
+
+        # Buscar emails dos ultimos 10 dias
+        data_inicio = (datetime.now() - timedelta(days=10)).strftime('%d-%b-%Y')
+        status, messages = mail.search(None, f'(SINCE "{data_inicio}")')
+
+        if status == 'OK':
+            email_ids = messages[0].split()
+            resultado["total"] = len(email_ids)
+
+            for email_id in email_ids[-20:]:  # Ultimos 20
+                try:
+                    status, msg_data = mail.fetch(email_id, '(RFC822 UID)')
+                    if status != 'OK':
+                        continue
+
+                    import re
+                    uid_match = re.search(rb'UID (\d+)', msg_data[0][0])
+                    uid = uid_match.group(1).decode() if uid_match else email_id.decode()
+
+                    raw_email = msg_data[0][1]
+                    msg = email_lib.message_from_bytes(raw_email)
+
+                    from_header = msg['From'] or ''
+                    subject = msg['Subject'] or ''
+                    date = msg['Date'] or ''
+
+                    resultado["emails"].append({
+                        "uid": uid,
+                        "from": from_header[:50],
+                        "subject": subject[:60],
+                        "date": date
+                    })
+                except Exception as e:
+                    resultado["emails"].append({"erro": str(e)})
+
+        mail.logout()
+        resultado["sucesso"] = True
+
+    except Exception as e:
+        resultado["erro"] = str(e)
 
     return resultado
 
