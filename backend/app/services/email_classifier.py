@@ -71,11 +71,17 @@ class EmailClassifier:
             "classificados_remetente": 0,
             "classificados_ia": 0,
             "pendentes_manual": 0,
+            "ignorados_duplicados": 0,
             "erros": 0
         }
 
+        # REGRA: Rastrear combinações SC+fornecedor já processadas
+        # Quando encontrar um email para uma combinação já processada, IGNORAR
+        # Isso funciona porque os emails são processados do mais recente para o mais antigo
+        combinacoes_processadas = set()
+
         try:
-            # Ler emails da caixa de entrada
+            # Ler emails da caixa de entrada (ordenados do mais recente para mais antigo)
             emails = self._ler_emails_inbox(dias_atras)
             stats["total_lidos"] = len(emails)
 
@@ -117,8 +123,22 @@ class EmailClassifier:
                         elif metodo == MetodoClassificacao.IA:
                             stats["classificados_ia"] += 1
 
-                        # Se tem solicitacao e fornecedor, marcar proposta como RECEBIDA
+                        # Se tem solicitacao e fornecedor, verificar se já processamos essa combinação
                         if solicitacao_id and fornecedor_id:
+                            combinacao = (solicitacao_id, fornecedor_id)
+
+                            # REGRA: Se já processamos um email mais recente para esta combinação, IGNORAR
+                            if combinacao in combinacoes_processadas:
+                                print(f"[CLASSIFICADOR] Ignorando email antigo - combinacao SC={solicitacao_id} + Forn={fornecedor_id} ja processada")
+                                stats["ignorados_duplicados"] += 1
+                                # Apenas salvar registro do email, mas não processar dados
+                                email_processado.processado_em = datetime.utcnow()
+                                db.commit()
+                                continue
+
+                            # Marcar combinação como processada (primeira vez = email mais recente)
+                            combinacoes_processadas.add(combinacao)
+
                             # Primeiro, marcar proposta como RECEBIDA (mesmo sem dados extraidos)
                             proposta_id = self._marcar_proposta_recebida(
                                 db, tenant_id, solicitacao_id, fornecedor_id
@@ -134,7 +154,6 @@ class EmailClassifier:
                             if dados_extraidos:
                                 email_processado.dados_extraidos = json.dumps(dados_extraidos)
                                 # Atualizar proposta com os dados extraidos
-                                # REGRA: Só atualiza se este email for o mais recente
                                 self._atualizar_proposta_com_dados(
                                     db, tenant_id, solicitacao_id, fornecedor_id, dados_extraidos,
                                     data_email=email_processado.data_recebimento
@@ -185,7 +204,10 @@ class EmailClassifier:
                 return []
 
             email_ids = messages[0].split()
-            print(f"[CLASSIFICADOR] Encontrados {len(email_ids)} emails nos ultimos {dias_atras} dias")
+            # IMPORTANTE: Ordenar do mais recente para o mais antigo (DESCENDENTE)
+            # Isso garante que ao encontrar um email para SC+fornecedor, usamos o mais recente
+            email_ids = list(reversed(email_ids))
+            print(f"[CLASSIFICADOR] Encontrados {len(email_ids)} emails nos ultimos {dias_atras} dias (ordem: mais recente primeiro)")
 
             for email_id in email_ids:
                 try:
