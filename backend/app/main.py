@@ -42,7 +42,7 @@ def health_check():
 @app.get("/api/v1/version")
 def get_api_version():
     """Retorna versão do backend para verificar deploy"""
-    return {"version": "1.0071", "status": "ok"}
+    return {"version": "1.0072", "status": "ok"}
 
 # Debug: testar pypdf
 @app.get("/debug/pypdf")
@@ -374,6 +374,71 @@ def limpar_tudo(tenant_id: int):
 
         resultado["sucesso"] = True
         resultado["mensagem"] = "Limpeza completa! Aplicação pronta para novo teste."
+
+    except Exception as e:
+        resultado["erro"] = str(e)
+        resultado["traceback"] = traceback.format_exc()
+
+    return resultado
+
+
+@app.post("/debug/preparar-teste/{tenant_id}")
+def preparar_teste(tenant_id: int):
+    """
+    Prepara ambiente para teste:
+    1. Limpa todos os dados de cotações
+    2. Vincula todos os produtos a todos os fornecedores
+    """
+    import traceback
+    resultado = {"tenant_id": tenant_id, "etapas": []}
+
+    try:
+        from app.database import SessionLocal
+        from app.models.cotacao import SolicitacaoCotacao, PropostaFornecedor, ItemSolicitacao, ItemProposta
+        from app.models.email_processado import EmailProcessado
+        from app.models.fornecedor import Fornecedor
+        from app.models.produto import Produto
+        from app.models.produto_fornecedor import ProdutoFornecedor
+
+        db = SessionLocal()
+
+        # PASSO 1: Limpar dados de cotações
+        db.query(ItemProposta).filter(ItemProposta.tenant_id == tenant_id).delete()
+        db.query(PropostaFornecedor).filter(PropostaFornecedor.tenant_id == tenant_id).delete()
+        db.query(ItemSolicitacao).filter(ItemSolicitacao.tenant_id == tenant_id).delete()
+        db.query(SolicitacaoCotacao).filter(SolicitacaoCotacao.tenant_id == tenant_id).delete()
+        db.query(EmailProcessado).filter(EmailProcessado.tenant_id == tenant_id).delete()
+        resultado["etapas"].append("Dados de cotações limpos")
+
+        # PASSO 2: Buscar todos os produtos e fornecedores
+        produtos = db.query(Produto).filter(Produto.tenant_id == tenant_id).all()
+        fornecedores = db.query(Fornecedor).filter(Fornecedor.tenant_id == tenant_id).all()
+
+        resultado["produtos"] = [p.nome for p in produtos]
+        resultado["fornecedores"] = [f.razao_social for f in fornecedores]
+
+        # PASSO 3: Limpar vínculos existentes e criar novos
+        db.query(ProdutoFornecedor).filter(ProdutoFornecedor.tenant_id == tenant_id).delete()
+
+        vinculos_criados = 0
+        for produto in produtos:
+            for fornecedor in fornecedores:
+                vinculo = ProdutoFornecedor(
+                    produto_id=produto.id,
+                    fornecedor_id=fornecedor.id,
+                    tenant_id=tenant_id
+                )
+                db.add(vinculo)
+                vinculos_criados += 1
+
+        resultado["vinculos_criados"] = vinculos_criados
+        resultado["etapas"].append(f"Criados {vinculos_criados} vínculos produto-fornecedor")
+
+        db.commit()
+        db.close()
+
+        resultado["sucesso"] = True
+        resultado["mensagem"] = "Ambiente preparado! Pronto para criar nova solicitação."
 
     except Exception as e:
         resultado["erro"] = str(e)
