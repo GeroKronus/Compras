@@ -766,6 +766,7 @@ Responda APENAS com JSON no formato:
     def _extrair_dados_proposta(self, corpo: str, conteudo_pdf: str = None) -> Optional[dict]:
         """
         Extrai dados da proposta do corpo do email usando IA
+        Com FALLBACK para parsing direto do PDF quando IA falhar
 
         Args:
             corpo: Corpo do email
@@ -774,14 +775,129 @@ Responda APENAS com JSON no formato:
         Returns:
             Dict com dados extraidos ou None
         """
-        if not ai_service.is_available:
-            return None
-
         # Se nao tiver corpo nem PDF, nao ha o que extrair
         if not corpo and not conteudo_pdf:
             return None
 
-        return ai_service.extrair_dados_proposta_email(corpo or "", conteudo_pdf)
+        # Tentar usar IA primeiro (se disponivel)
+        if ai_service.is_available:
+            resultado = ai_service.extrair_dados_proposta_email(corpo or "", conteudo_pdf)
+            # Se IA retornou dados validos (sem erro), usar
+            if resultado and 'error' not in resultado and resultado.get('itens'):
+                print(f"[CLASSIFICADOR] IA extraiu {len(resultado.get('itens', []))} itens")
+                return resultado
+            else:
+                print(f"[CLASSIFICADOR] IA falhou ou retornou vazio, usando fallback de parsing direto")
+
+        # FALLBACK: Parsear diretamente o conteudo do PDF
+        if conteudo_pdf:
+            resultado_fallback = self._parsear_pdf_direto(conteudo_pdf)
+            if resultado_fallback and resultado_fallback.get('itens'):
+                print(f"[CLASSIFICADOR] Fallback extraiu {len(resultado_fallback.get('itens', []))} itens")
+                return resultado_fallback
+
+        return None
+
+    def _parsear_pdf_direto(self, conteudo_pdf: str) -> Optional[dict]:
+        """
+        Parseia diretamente o conteudo estruturado do PDF
+        Formato esperado:
+        === DADOS DA PROPOSTA EXTRAIDOS DO PDF ===
+        PRECOS POR ITEM:
+          Item 1:
+            - Preco Unitario: R$ 4,00
+            - Total: R$ 20,00
+        DADOS GERAIS:
+          - Prazo de Entrega (dias): 15
+          - Condicoes de Pagamento: 30/60
+        """
+        if not conteudo_pdf:
+            return None
+
+        resultado = {
+            'itens': [],
+            'prazo_entrega_dias': None,
+            'condicoes_pagamento': None,
+            'validade_proposta_dias': None,
+            'observacoes': None,
+            'confianca_extracao': 90  # Alta confianca pois vem direto do PDF
+        }
+
+        try:
+            # Extrair precos por item usando regex
+            # Formato: Item X: ... Preco Unitario: R$ Y,YY
+            import re
+
+            # Pattern para encontrar itens e seus precos
+            # Busca "Item N:" seguido de "Preco Unitario: R$ X,XX" ou "preco_unit_N = X,XX"
+            pattern_item = r'Item\s+(\d+):\s*[\s\S]*?Pre[cç]o Unit[aá]rio:\s*R?\$?\s*([\d,.]+)'
+            matches_item = re.findall(pattern_item, conteudo_pdf, re.IGNORECASE)
+
+            for match in matches_item:
+                idx = int(match[0]) - 1  # Converter para base-0
+                preco_str = match[1].replace('.', '').replace(',', '.')
+                try:
+                    preco = float(preco_str)
+                    resultado['itens'].append({
+                        'indice': idx,
+                        'preco_unitario': preco,
+                        'total': None,
+                        'marca': None
+                    })
+                except ValueError:
+                    pass
+
+            # Se nao encontrou pelo formato "Item N:", tentar formato "preco_unit_N = X,XX"
+            if not resultado['itens']:
+                pattern_preco = r'preco_unit_(\d+)\s*=\s*([\d,.]+)'
+                matches_preco = re.findall(pattern_preco, conteudo_pdf, re.IGNORECASE)
+
+                for match in matches_preco:
+                    idx = int(match[0])
+                    preco_str = match[1].replace('.', '').replace(',', '.')
+                    try:
+                        preco = float(preco_str)
+                        resultado['itens'].append({
+                            'indice': idx,
+                            'preco_unitario': preco,
+                            'total': None,
+                            'marca': None
+                        })
+                    except ValueError:
+                        pass
+
+            # Extrair dados gerais
+            # Prazo de entrega
+            pattern_prazo = r'(?:Prazo\s+(?:de\s+)?Entrega|prazo_entrega)[:\s=]+(\d+)'
+            match_prazo = re.search(pattern_prazo, conteudo_pdf, re.IGNORECASE)
+            if match_prazo:
+                resultado['prazo_entrega_dias'] = int(match_prazo.group(1))
+
+            # Condicoes de pagamento
+            pattern_pagamento = r'(?:Condi[cç][oõ]es\s+(?:de\s+)?Pagamento|condicoes_pagamento)[:\s=]+([^\n]+)'
+            match_pagamento = re.search(pattern_pagamento, conteudo_pdf, re.IGNORECASE)
+            if match_pagamento:
+                resultado['condicoes_pagamento'] = match_pagamento.group(1).strip()
+
+            # Validade da proposta
+            pattern_validade = r'(?:Validade|validade)[:\s=]+(\d+)'
+            match_validade = re.search(pattern_validade, conteudo_pdf, re.IGNORECASE)
+            if match_validade:
+                resultado['validade_proposta_dias'] = int(match_validade.group(1))
+
+            # Observacoes
+            pattern_obs = r'(?:Observa[cç][oõ]es|observacoes)[:\s=]+([^\n]+)'
+            match_obs = re.search(pattern_obs, conteudo_pdf, re.IGNORECASE)
+            if match_obs:
+                resultado['observacoes'] = match_obs.group(1).strip()
+
+            print(f"[CLASSIFICADOR] Fallback PDF: {len(resultado['itens'])} itens, prazo={resultado['prazo_entrega_dias']}, pagamento={resultado['condicoes_pagamento']}")
+
+            return resultado if resultado['itens'] else None
+
+        except Exception as e:
+            print(f"[CLASSIFICADOR] Erro no fallback de parsing: {e}")
+            return None
 
     def _marcar_proposta_recebida(
         self,
