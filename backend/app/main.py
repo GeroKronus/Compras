@@ -42,7 +42,7 @@ def health_check():
 @app.get("/api/v1/version")
 def get_api_version():
     """Retorna versão do backend para verificar deploy"""
-    return {"version": "1.0070", "status": "ok"}
+    return {"version": "1.0071", "status": "ok"}
 
 # Debug: testar pypdf
 @app.get("/debug/pypdf")
@@ -325,6 +325,61 @@ GABARITO = {
 def get_gabarito():
     """Retorna valores esperados (gabarito) dos PDFs de teste."""
     return GABARITO
+
+
+@app.post("/debug/limpar-tudo/{tenant_id}")
+def limpar_tudo(tenant_id: int):
+    """
+    Limpa TODOS os dados de cotações de um tenant.
+    Mantém: tenants, usuários, fornecedores, produtos, categorias.
+    Remove: solicitações, itens, propostas, emails processados.
+    """
+    import traceback
+    resultado = {"tenant_id": tenant_id, "etapas": []}
+
+    try:
+        from app.database import SessionLocal
+        from app.models.cotacao import SolicitacaoCotacao, PropostaFornecedor, ItemSolicitacao, ItemProposta
+        from app.models.email_processado import EmailProcessado
+
+        db = SessionLocal()
+
+        # 1. Deletar ItemProposta
+        count = db.query(ItemProposta).filter(ItemProposta.tenant_id == tenant_id).delete()
+        resultado["itens_proposta_deletados"] = count
+        resultado["etapas"].append(f"ItemProposta: {count}")
+
+        # 2. Deletar PropostaFornecedor
+        count = db.query(PropostaFornecedor).filter(PropostaFornecedor.tenant_id == tenant_id).delete()
+        resultado["propostas_deletadas"] = count
+        resultado["etapas"].append(f"PropostaFornecedor: {count}")
+
+        # 3. Deletar ItemSolicitacao
+        count = db.query(ItemSolicitacao).filter(ItemSolicitacao.tenant_id == tenant_id).delete()
+        resultado["itens_solicitacao_deletados"] = count
+        resultado["etapas"].append(f"ItemSolicitacao: {count}")
+
+        # 4. Deletar SolicitacaoCotacao
+        count = db.query(SolicitacaoCotacao).filter(SolicitacaoCotacao.tenant_id == tenant_id).delete()
+        resultado["solicitacoes_deletadas"] = count
+        resultado["etapas"].append(f"SolicitacaoCotacao: {count}")
+
+        # 5. Deletar EmailProcessado
+        count = db.query(EmailProcessado).filter(EmailProcessado.tenant_id == tenant_id).delete()
+        resultado["emails_deletados"] = count
+        resultado["etapas"].append(f"EmailProcessado: {count}")
+
+        db.commit()
+        db.close()
+
+        resultado["sucesso"] = True
+        resultado["mensagem"] = "Limpeza completa! Aplicação pronta para novo teste."
+
+    except Exception as e:
+        resultado["erro"] = str(e)
+        resultado["traceback"] = traceback.format_exc()
+
+    return resultado
 
 
 @app.get("/debug/fornecedores/{tenant_id}")
