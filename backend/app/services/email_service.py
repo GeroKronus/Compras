@@ -787,5 +787,193 @@ Referência: {solicitacao_numero}
         )
 
 
+    def enviar_ordem_compra(
+        self,
+        fornecedor_email: str,
+        fornecedor_nome: str,
+        pedido_numero: str,
+        itens: List[dict],
+        valor_total: float,
+        prazo_entrega: Optional[int] = None,
+        condicao_pagamento: Optional[str] = None,
+        frete_tipo: Optional[str] = None,
+        observacoes: Optional[str] = None,
+        empresa_nome: Optional[str] = None
+    ) -> bool:
+        """
+        Envia email com a Ordem de Compra oficial para o fornecedor
+
+        Args:
+            fornecedor_email: Email do fornecedor
+            fornecedor_nome: Nome do fornecedor
+            pedido_numero: Número do pedido (ex: PC-2024-00001)
+            itens: Lista de itens com produto_nome, quantidade, unidade, preco_unitario, valor_total
+            valor_total: Valor total do pedido
+            prazo_entrega: Prazo de entrega em dias
+            condicao_pagamento: Condição de pagamento
+            frete_tipo: Tipo do frete (CIF/FOB)
+            observacoes: Observações do pedido
+            empresa_nome: Nome da empresa compradora
+
+        Returns:
+            True se enviado com sucesso
+        """
+        assunto = f"[ORDEM DE COMPRA] {pedido_numero} - Pedido Oficial"
+
+        # Criar HTML dos itens
+        itens_html = ""
+        for i, item in enumerate(itens, 1):
+            itens_html += f"""
+            <tr>
+                <td style="padding: 12px; border-bottom: 1px solid #eee;">{i}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #eee;"><strong>{item.get('produto_nome', 'N/A')}</strong><br><small style="color: #666;">{item.get('especificacoes', '') or ''}</small></td>
+                <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center;">{item.get('quantidade', 0)} {item.get('unidade', '')}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right;">R$ {float(item.get('preco_unitario', 0)):,.2f}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right;">R$ {float(item.get('valor_total', 0)):,.2f}</td>
+            </tr>
+            """
+
+        prazo_html = f"<tr><td style='padding: 8px;'><strong>Prazo de Entrega:</strong></td><td style='padding: 8px;'>{prazo_entrega} dias</td></tr>" if prazo_entrega else ""
+        condicao_html = f"<tr><td style='padding: 8px;'><strong>Condição de Pagamento:</strong></td><td style='padding: 8px;'>{condicao_pagamento}</td></tr>" if condicao_pagamento else ""
+        frete_html = f"<tr><td style='padding: 8px;'><strong>Frete:</strong></td><td style='padding: 8px;'>{frete_tipo}</td></tr>" if frete_tipo else ""
+        obs_html = f"<tr><td style='padding: 8px;'><strong>Observações:</strong></td><td style='padding: 8px;'>{observacoes}</td></tr>" if observacoes else ""
+        empresa_html = empresa_nome or "Departamento de Compras"
+
+        corpo_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+        .container {{ max-width: 700px; margin: 0 auto; padding: 20px; }}
+        .header {{ background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
+        .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
+        .footer {{ text-align: center; margin-top: 20px; color: #666; font-size: 12px; }}
+        .destaque {{ background: #eff6ff; border: 2px solid #2563eb; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: center; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; background: white; }}
+        th {{ background: #2563eb; color: white; padding: 12px; text-align: left; }}
+        .total {{ background: #eff6ff; font-weight: bold; }}
+        .info-box {{ background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin: 20px 0; }}
+        .importante {{ background: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 style="margin: 0;">📦 ORDEM DE COMPRA</h1>
+            <p style="margin: 10px 0 0 0; font-size: 24px; font-weight: bold;">{pedido_numero}</p>
+        </div>
+        <div class="content">
+            <p>Prezado(a) <strong>{fornecedor_nome}</strong>,</p>
+
+            <p>Segue abaixo a <strong>Ordem de Compra oficial</strong>. Por favor, confirme o recebimento e proceda conforme as condições estabelecidas.</p>
+
+            <div class="destaque">
+                <h2 style="color: #1d4ed8; margin: 0 0 10px 0;">Pedido: {pedido_numero}</h2>
+                <p style="font-size: 28px; margin: 0; color: #1d4ed8;">R$ {valor_total:,.2f}</p>
+            </div>
+
+            <h3 style="color: #2563eb;">Itens do Pedido</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 50px;">#</th>
+                        <th>Produto</th>
+                        <th style="width: 100px; text-align: center;">Quantidade</th>
+                        <th style="width: 120px; text-align: right;">Preço Unit.</th>
+                        <th style="width: 120px; text-align: right;">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {itens_html}
+                    <tr class="total">
+                        <td colspan="4" style="padding: 12px; text-align: right;"><strong>VALOR TOTAL:</strong></td>
+                        <td style="padding: 12px; text-align: right;"><strong>R$ {valor_total:,.2f}</strong></td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="info-box">
+                <h4 style="margin: 0 0 10px 0; color: #2563eb;">Condições do Pedido</h4>
+                <table style="margin: 0; background: transparent;">
+                    {prazo_html}
+                    {condicao_html}
+                    {frete_html}
+                    {obs_html}
+                </table>
+            </div>
+
+            <div class="importante">
+                <strong>⚠️ IMPORTANTE:</strong>
+                <ul style="margin: 10px 0 0 0;">
+                    <li>Por favor, <strong>confirme o recebimento</strong> deste pedido respondendo este email</li>
+                    <li>Informe a <strong>data prevista de entrega</strong></li>
+                    <li>Qualquer divergência, entre em contato imediatamente</li>
+                </ul>
+            </div>
+
+            <p>Contamos com sua parceria e aguardamos a confirmação.</p>
+
+            <p>Atenciosamente,<br>
+            <strong>{empresa_html}</strong></p>
+        </div>
+        <div class="footer">
+            <p>Este é um email automático do Sistema de Gestão de Compras</p>
+            <p>Referência: {pedido_numero}</p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+        # Criar versão texto dos itens
+        itens_texto = ""
+        for i, item in enumerate(itens, 1):
+            itens_texto += f"  {i}. {item.get('produto_nome', 'N/A')} - Qtd: {item.get('quantidade', 0)} {item.get('unidade', '')} - R$ {float(item.get('preco_unitario', 0)):,.2f} - Total: R$ {float(item.get('valor_total', 0)):,.2f}\n"
+
+        corpo_texto = f"""
+📦 ORDEM DE COMPRA - {pedido_numero}
+
+Prezado(a) {fornecedor_nome},
+
+Segue abaixo a Ordem de Compra oficial. Por favor, confirme o recebimento e proceda conforme as condições estabelecidas.
+
+PEDIDO: {pedido_numero}
+VALOR TOTAL: R$ {valor_total:,.2f}
+
+ITENS DO PEDIDO:
+-------------------------------------------
+{itens_texto}
+-------------------------------------------
+VALOR TOTAL: R$ {valor_total:,.2f}
+
+CONDIÇÕES DO PEDIDO:
+{f'- Prazo de Entrega: {prazo_entrega} dias' if prazo_entrega else ''}
+{f'- Condição de Pagamento: {condicao_pagamento}' if condicao_pagamento else ''}
+{f'- Frete: {frete_tipo}' if frete_tipo else ''}
+{f'- Observações: {observacoes}' if observacoes else ''}
+
+⚠️ IMPORTANTE:
+- Por favor, confirme o recebimento deste pedido respondendo este email
+- Informe a data prevista de entrega
+- Qualquer divergência, entre em contato imediatamente
+
+Contamos com sua parceria e aguardamos a confirmação.
+
+Atenciosamente,
+{empresa_html}
+
+Referência: {pedido_numero}
+"""
+
+        return self.enviar_email(
+            destinatario=fornecedor_email,
+            assunto=assunto,
+            corpo_html=corpo_html,
+            corpo_texto=corpo_texto
+        )
+
+
 # Instância singleton
 email_service = EmailService()

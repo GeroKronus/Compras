@@ -434,16 +434,74 @@ def enviar_para_fornecedor(
     db: Session = Depends(get_db),
     tenant_id: int = Depends(get_current_tenant_id)
 ):
-    """Marcar pedido como enviado ao fornecedor"""
-    pedido = get_by_id(db, PedidoCompra, pedido_id, tenant_id, error_message="Pedido nao encontrado")
+    """Enviar pedido ao fornecedor por email"""
+    from app.services.email_service import EmailService
+    from app.models.tenant import Tenant
+
+    pedido = get_by_id(
+        db, PedidoCompra, pedido_id, tenant_id,
+        error_message="Pedido nao encontrado",
+        options=[
+            joinedload(PedidoCompra.fornecedor),
+            joinedload(PedidoCompra.itens).joinedload(ItemPedido.produto)
+        ]
+    )
 
     if pedido.status != StatusPedido.APROVADO:
         raise HTTPException(status_code=400, detail="Pedido precisa estar aprovado")
 
+    # Verificar se fornecedor tem email
+    if not pedido.fornecedor or not pedido.fornecedor.email_principal:
+        raise HTTPException(
+            status_code=400,
+            detail="Fornecedor nao possui email cadastrado"
+        )
+
+    # Buscar tenant para nome da empresa
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+
+    # Preparar itens para email
+    itens_email = []
+    for item in pedido.itens:
+        itens_email.append({
+            'produto_nome': item.produto.nome if item.produto else 'N/A',
+            'quantidade': float(item.quantidade),
+            'unidade': item.unidade_medida or '',
+            'preco_unitario': float(item.preco_unitario),
+            'valor_total': float(item.valor_total),
+            'especificacoes': item.especificacoes
+        })
+
+    # Enviar email
+    email_service = EmailService()
+    email_service.configure_from_tenant(tenant)
+
+    sucesso = email_service.enviar_ordem_compra(
+        fornecedor_email=pedido.fornecedor.email_principal,
+        fornecedor_nome=pedido.fornecedor.razao_social or pedido.fornecedor.nome_fantasia,
+        pedido_numero=pedido.numero,
+        itens=itens_email,
+        valor_total=float(pedido.valor_total or 0),
+        prazo_entrega=pedido.prazo_entrega,
+        condicao_pagamento=pedido.condicoes_pagamento,
+        frete_tipo=pedido.frete_tipo,
+        observacoes=pedido.observacoes,
+        empresa_nome=tenant.nome_empresa if tenant else None
+    )
+
+    if not sucesso:
+        raise HTTPException(
+            status_code=500,
+            detail="Falha ao enviar email para o fornecedor. Verifique configuracoes SMTP."
+        )
+
+    # Atualizar status
     pedido.status = StatusPedido.ENVIADO_FORNECEDOR
     pedido.data_envio = datetime.utcnow()
     db.commit()
     db.refresh(pedido)
+
+    print(f"[PEDIDO] Email de OC {pedido.numero} enviado para {pedido.fornecedor.email_principal}")
 
     return _enrich_pedido_response(pedido, db)
 
