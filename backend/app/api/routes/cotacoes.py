@@ -698,7 +698,8 @@ def obter_mapa_comparativo(
                         "fornecedor_cnpj": fornecedor.cnpj if fornecedor else "",
                         "valor_total": float(proposta.valor_total or 0),
                         "itens_cotados": 1,
-                        "prazo_medio": proposta.prazo_entrega or 0
+                        "prazo_medio": proposta.prazo_entrega or 0,
+                        "condicoes_pagamento": proposta.condicoes_pagamento or ""
                     }
                 else:
                     resumo_fornecedores[proposta.id]["itens_cotados"] += 1

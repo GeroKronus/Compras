@@ -44,6 +44,7 @@ interface MapaComparativo {
       valor_total: number;
       itens_cotados: number;
       prazo_medio: number;
+      condicoes_pagamento?: string;
     };
   };
 }
@@ -367,8 +368,12 @@ export default function MapaComparativo() {
                           <span>{fornecedor.itens_cotados}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-500">Prazo Medio:</span>
-                          <span>{fornecedor.prazo_medio || '-'} dias</span>
+                          <span className="text-gray-500">Prazo Entrega:</span>
+                          <span>{fornecedor.prazo_medio ? `${fornecedor.prazo_medio} dias` : '-'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Pagamento:</span>
+                          <span>{fornecedor.condicoes_pagamento || '-'}</span>
                         </div>
                       </div>
                     </div>
