@@ -276,7 +276,7 @@ export default function MapaComparativo() {
                     <div className="flex justify-between items-center">
                       <div>
                         <p className="font-medium text-lg">{sugestaoData.fornecedor_nome}</p>
-                        <p className="text-sm text-gray-600">Score: {sugestaoData.score_total.toFixed(2)}</p>
+                        <p className="text-sm text-gray-600">Score: {Number(sugestaoData.score_total).toFixed(2)}</p>
                       </div>
                       {sugestaoData.economia_estimada && (
                         <div className="text-right">
