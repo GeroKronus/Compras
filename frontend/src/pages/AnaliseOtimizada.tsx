@@ -300,8 +300,8 @@ export default function AnaliseOtimizada() {
   };
 
   // Formatar moeda
-  const formatCurrency = (value: number) =>
-    value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const formatCurrency = (value: number | string) =>
+    Number(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
   if (!solicitacaoId) {
     return (
@@ -427,7 +427,7 @@ export default function AnaliseOtimizada() {
                     {formatCurrency(analise.economia_otimizada)}
                   </p>
                   <p className="text-sm text-gray-600">
-                    {analise.economia_percentual.toFixed(1)}% de economia
+                    {Number(analise.economia_percentual).toFixed(1)}% de economia
                   </p>
                 </div>
               </div>
@@ -624,9 +624,9 @@ export default function AnaliseOtimizada() {
                                   Total: {formatCurrency(preco.preco_total)}
                                 </div>
                                 {preco.diferenca_percentual !== undefined &&
-                                  preco.diferenca_percentual > 0 && (
+                                  Number(preco.diferenca_percentual) > 0 && (
                                     <div className="text-xs text-red-500">
-                                      +{preco.diferenca_percentual.toFixed(1)}%
+                                      +{Number(preco.diferenca_percentual).toFixed(1)}%
                                     </div>
                                   )}
                                 {isMenor && (
