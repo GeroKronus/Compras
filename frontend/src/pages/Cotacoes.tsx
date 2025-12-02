@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
@@ -104,6 +104,22 @@ export default function Cotacoes() {
   const [enviarParaTodos, setEnviarParaTodos] = useState(false);
   const [fornecedoresProdutos, setFornecedoresProdutos] = useState<number[]>([]);
   const [carregandoFornecedoresProdutos, setCarregandoFornecedoresProdutos] = useState(false);
+
+  // Refs para navegação entre campos
+  const tituloRef = useRef<HTMLInputElement>(null);
+  const descricaoRef = useRef<HTMLTextAreaElement>(null);
+
+  // Foca no campo título quando o modal abre
+  useEffect(() => {
+    if (editModal.isOpen) {
+      // Pequeno delay para garantir que o modal renderizou
+      const timer = setTimeout(() => {
+        tituloRef.current?.focus();
+        tituloRef.current?.select();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [editModal.isOpen]);
 
   // Queries
   const { data: solicitacoesData, isLoading } = useQuery({
@@ -499,18 +515,33 @@ export default function Cotacoes() {
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-700">Titulo *</label>
               <input
+                ref={tituloRef}
                 type="text"
                 required
-                autoFocus
                 placeholder="Digite o título da solicitação..."
                 value={formData.titulo}
                 onChange={(e) => setFormData({ ...formData, titulo: e.target.value })}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 caret-primary-600"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    descricaoRef.current?.focus();
+                  }
+                }}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                style={{ caretColor: '#4f46e5' }}
               />
             </div>
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-700">Descricao</label>
-              <textarea value={formData.descricao} onChange={(e) => setFormData({ ...formData, descricao: e.target.value })} rows={2} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500" />
+              <textarea
+                ref={descricaoRef}
+                value={formData.descricao}
+                onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
+                rows={2}
+                placeholder="Descreva os detalhes da solicitação..."
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                style={{ caretColor: '#4f46e5' }}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Data Limite</label>
