@@ -1366,12 +1366,27 @@ def obter_analise_otimizada(
     # Ordenar por valor total
     resumo_fornecedores.sort(key=lambda x: float(x.valor_total or 0))
 
-    # Menor valor global (compra única)
+    # Menor valor global (compra única) - APENAS fornecedores que cotaram TODOS os itens
     if not resumo_fornecedores:
         raise HTTPException(status_code=400, detail="Nenhum fornecedor com proposta valida")
 
-    menor_global = resumo_fornecedores[0]
-    menor_valor_global = float(menor_global.valor_total or 0)
+    total_itens_solicitacao = len(itens_solicitacao)
+    fornecedores_completos = [
+        f for f in resumo_fornecedores
+        if f.qtd_itens_cotados == total_itens_solicitacao
+    ]
+
+    # Se há fornecedores que cotaram todos os itens, usar o menor deles
+    # Caso contrário, não há opção válida de "compra única"
+    if fornecedores_completos:
+        menor_global = fornecedores_completos[0]
+        menor_valor_global = float(menor_global.valor_total or 0)
+        tem_opcao_compra_unica = True
+    else:
+        # Nenhum fornecedor cotou todos os itens - usar o primeiro apenas para referência
+        menor_global = resumo_fornecedores[0]
+        menor_valor_global = float(menor_global.valor_total or 0)
+        tem_opcao_compra_unica = False
 
     # Calcular valor otimizado (melhor por item)
     valor_otimizado = sum(data["preco_total"] for data in melhor_por_item.values())
@@ -1425,7 +1440,12 @@ def obter_analise_otimizada(
 
     # Recomendação
     qtd_fornecedores_otimizado = len(compra_por_fornecedor)
-    if economia > 0 and economia_percentual >= 5 and qtd_fornecedores_otimizado <= 3:
+
+    # Se nenhum fornecedor cotou todos os itens, sempre recomendar compra otimizada (split)
+    if not tem_opcao_compra_unica:
+        recomendacao = "COMPRA_OTIMIZADA"
+        justificativa = f"Nenhum fornecedor cotou todos os {total_itens_solicitacao} itens. Necessário dividir entre {qtd_fornecedores_otimizado} fornecedor(es)."
+    elif economia > 0 and economia_percentual >= 5 and qtd_fornecedores_otimizado <= 3:
         recomendacao = "COMPRA_OTIMIZADA"
         justificativa = f"Economia de R$ {economia:.2f} ({economia_percentual:.1f}%) ao dividir entre {qtd_fornecedores_otimizado} fornecedor(es)"
     elif economia > 0 and qtd_fornecedores_otimizado > 3:
