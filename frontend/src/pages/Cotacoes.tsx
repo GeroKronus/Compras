@@ -498,7 +498,15 @@ export default function Cotacoes() {
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-700">Titulo *</label>
-              <input type="text" required value={formData.titulo} onChange={(e) => setFormData({ ...formData, titulo: e.target.value })} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500" />
+              <input
+                type="text"
+                required
+                autoFocus
+                placeholder="Digite o título da solicitação..."
+                value={formData.titulo}
+                onChange={(e) => setFormData({ ...formData, titulo: e.target.value })}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 caret-primary-600"
+              />
             </div>
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-700">Descricao</label>
