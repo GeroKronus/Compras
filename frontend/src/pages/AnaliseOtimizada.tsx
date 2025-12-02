@@ -218,10 +218,11 @@ export default function AnaliseOtimizada() {
       porFornecedor[sel.fornecedor_id].valor += precoTotal;
     });
 
-    const menorValorGlobal = Number(analise.menor_valor_global) || 0;
-    const economia = menorValorGlobal - valorTotal;
+    // Referência é o valor otimizado (melhor preço por item)
+    const valorOtimizado = Number(analise.valor_otimizado) || 0;
+    const economia = valorOtimizado - valorTotal;
     const economiaPercentual =
-      menorValorGlobal > 0 ? (economia / menorValorGlobal) * 100 : 0;
+      valorOtimizado > 0 ? (economia / valorOtimizado) * 100 : 0;
 
     return {
       valorTotal,
@@ -485,7 +486,7 @@ export default function AnaliseOtimizada() {
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs text-gray-500 uppercase">
-                      {calculoAtual.economia >= 0 ? 'Economia vs Menor Global' : 'Custo Adicional'}
+                      {calculoAtual.economia >= 0 ? 'Economia vs Melhor Preco' : 'Custo Adicional'}
                     </p>
                     <p
                       className={`text-2xl font-bold ${
