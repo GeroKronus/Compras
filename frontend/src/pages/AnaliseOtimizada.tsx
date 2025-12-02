@@ -200,7 +200,8 @@ export default function AnaliseOtimizada() {
       const preco = item.precos_fornecedores.find((p) => p.fornecedor_id === sel.fornecedor_id);
       if (!preco) return;
 
-      valorTotal += preco.preco_total;
+      const precoTotal = Number(preco.preco_total) || 0;
+      valorTotal += precoTotal;
 
       if (!porFornecedor[sel.fornecedor_id]) {
         porFornecedor[sel.fornecedor_id] = {
@@ -214,12 +215,13 @@ export default function AnaliseOtimizada() {
         item_proposta_id: sel.item_proposta_id,
         fornecedor_id: sel.fornecedor_id,
       });
-      porFornecedor[sel.fornecedor_id].valor += preco.preco_total;
+      porFornecedor[sel.fornecedor_id].valor += precoTotal;
     });
 
-    const economia = analise.menor_valor_global - valorTotal;
+    const menorValorGlobal = Number(analise.menor_valor_global) || 0;
+    const economia = menorValorGlobal - valorTotal;
     const economiaPercentual =
-      analise.menor_valor_global > 0 ? (economia / analise.menor_valor_global) * 100 : 0;
+      menorValorGlobal > 0 ? (economia / menorValorGlobal) * 100 : 0;
 
     return {
       valorTotal,
