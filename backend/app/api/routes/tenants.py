@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel, EmailStr
 from app.database import get_db
 from app.models.tenant import Tenant
@@ -28,7 +28,7 @@ class TenantListItem(BaseModel):
     plano: str
     ia_habilitada: bool
     email_contato: str
-    telefone: str | None
+    telefone: Optional[str]
     total_usuarios: int
     created_at: str
 
@@ -48,7 +48,7 @@ class MasterCreateTenant(BaseModel):
     razao_social: str
     cnpj: str
     email_contato: EmailStr
-    telefone: str | None = None
+    telefone: Optional[str] = None
     plano: str = "trial"
     admin_nome: str
     admin_email: EmailStr

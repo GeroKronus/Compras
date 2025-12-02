@@ -11,6 +11,7 @@ import { Fornecedores } from '@/pages/Fornecedores';
 import Cotacoes from '@/pages/Cotacoes';
 import Propostas from '@/pages/Propostas';
 import MapaComparativo from '@/pages/MapaComparativo';
+import AnaliseOtimizada from '@/pages/AnaliseOtimizada';
 import Pedidos from '@/pages/Pedidos';
 import EmailsRevisao from '@/pages/EmailsRevisao';
 import IACreditos from '@/pages/IACreditos';
@@ -135,6 +136,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <MapaComparativo />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/cotacoes/:solicitacaoId/analise"
+            element={
+              <ProtectedRoute>
+                <AnaliseOtimizada />
               </ProtectedRoute>
             }
           />

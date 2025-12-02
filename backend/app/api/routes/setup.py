@@ -5,6 +5,7 @@ Permite criar o primeiro usuário MASTER quando o banco está vazio.
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
+from typing import Optional
 from app.database import get_db, engine, Base
 from app.models.tenant import Tenant
 from app.models.usuario import Usuario, TipoUsuario
@@ -41,8 +42,8 @@ class SetupResponse(BaseModel):
     """Schema para resposta de setup"""
     success: bool
     message: str
-    cnpj: str | None = None
-    email: str | None = None
+    cnpj: Optional[str] = None
+    email: Optional[str] = None
 
 
 @router.get("/status")

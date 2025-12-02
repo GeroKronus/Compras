@@ -245,3 +245,128 @@ class SugestaoIAResponse(BaseModel):
     motivos: List[str]
     economia_estimada: Optional[Decimal] = None
     alertas: List[str] = []
+
+
+# ============ ANÁLISE OTIMIZADA POR ITEM ============
+
+class PrecoFornecedorItem(BaseModel):
+    """Preço de um fornecedor para um item específico"""
+    fornecedor_id: int
+    fornecedor_nome: str
+    proposta_id: int
+    item_proposta_id: int
+    preco_unitario: Decimal
+    desconto_percentual: Decimal = Decimal(0)
+    preco_final: Decimal  # unitário com desconto
+    preco_total: Decimal  # preco_final * quantidade
+    prazo_entrega: Optional[int] = None
+    condicoes_pagamento: Optional[str] = None
+    marca_oferecida: Optional[str] = None
+    is_menor_preco: bool = False
+    diferenca_percentual: Optional[Decimal] = None  # vs menor preço
+
+
+class AnaliseItemResponse(BaseModel):
+    """Análise de um item com preços de todos os fornecedores"""
+    item_solicitacao_id: int
+    produto_id: int
+    produto_nome: str
+    produto_codigo: Optional[str] = None
+    quantidade: Decimal
+    unidade_medida: str
+    precos_fornecedores: List[PrecoFornecedorItem]
+    menor_preco_unitario: Optional[Decimal] = None
+    menor_preco_total: Optional[Decimal] = None
+    fornecedor_menor_preco_id: Optional[int] = None
+    fornecedor_menor_preco_nome: Optional[str] = None
+
+
+class ResumoFornecedor(BaseModel):
+    """Resumo de valores por fornecedor"""
+    fornecedor_id: int
+    fornecedor_nome: str
+    proposta_id: int
+    valor_total: Decimal
+    prazo_entrega: Optional[int] = None
+    condicoes_pagamento: Optional[str] = None
+    qtd_itens_cotados: int
+    qtd_itens_menor_preco: int  # quantos itens este fornecedor tem o menor preço
+
+
+class ItemOtimizado(BaseModel):
+    """Item com fornecedor otimizado selecionado"""
+    item_solicitacao_id: int
+    produto_id: int
+    produto_nome: str
+    quantidade: Decimal
+    fornecedor_id: int
+    fornecedor_nome: str
+    proposta_id: int
+    item_proposta_id: int
+    preco_unitario: Decimal
+    preco_total: Decimal
+
+
+class CompraOtimizadaPorFornecedor(BaseModel):
+    """Agrupamento de itens por fornecedor para OC"""
+    fornecedor_id: int
+    fornecedor_nome: str
+    proposta_id: int
+    itens: List[ItemOtimizado]
+    valor_total: Decimal
+    prazo_entrega: Optional[int] = None
+    condicoes_pagamento: Optional[str] = None
+
+
+class AnaliseOtimizadaResponse(BaseModel):
+    """Resposta completa da análise otimizada"""
+    solicitacao_id: int
+    solicitacao_numero: str
+    solicitacao_titulo: str
+
+    # Análise por item
+    itens: List[AnaliseItemResponse]
+
+    # Resumo por fornecedor (compra única)
+    resumo_fornecedores: List[ResumoFornecedor]
+
+    # Comparativo
+    menor_valor_global: Decimal  # menor valor comprando tudo de 1 fornecedor
+    fornecedor_menor_global_id: int
+    fornecedor_menor_global_nome: str
+
+    # Compra otimizada (split)
+    valor_otimizado: Decimal  # valor comprando melhor de cada fornecedor
+    economia_otimizada: Decimal  # diferença entre menor global e otimizado
+    economia_percentual: Decimal
+    compra_otimizada: List[CompraOtimizadaPorFornecedor]
+
+    # Recomendação
+    recomendacao: str  # "COMPRA_UNICA" ou "COMPRA_OTIMIZADA"
+    justificativa: str
+
+
+class GerarOCsOtimizadasRequest(BaseModel):
+    """Request para gerar múltiplas OCs otimizadas"""
+    solicitacao_id: int
+    # Lista de seleções: qual fornecedor para cada item
+    selecoes: List[dict]  # [{item_solicitacao_id, fornecedor_id, item_proposta_id}]
+    justificativa: str = Field(..., min_length=10)
+
+
+class OCGerada(BaseModel):
+    """OC gerada no processo otimizado"""
+    pedido_id: int
+    pedido_numero: str
+    fornecedor_id: int
+    fornecedor_nome: str
+    valor_total: Decimal
+    qtd_itens: int
+
+
+class GerarOCsOtimizadasResponse(BaseModel):
+    """Resposta da geração de múltiplas OCs"""
+    solicitacao_id: int
+    ocs_geradas: List[OCGerada]
+    valor_total: Decimal
+    economia_vs_menor_global: Optional[Decimal] = None

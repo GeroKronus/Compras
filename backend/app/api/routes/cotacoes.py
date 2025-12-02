@@ -22,7 +22,11 @@ from app.schemas.cotacao import (
     PropostaFornecedorCreate, PropostaFornecedorUpdate, PropostaFornecedorResponse,
     PropostaFornecedorListResponse, ItemPropostaResponse,
     EnviarSolicitacaoRequest, RegistrarPropostaRequest, EscolherVencedorRequest,
-    MapaComparativoResponse, ItemMapaComparativo, SugestaoIAResponse
+    MapaComparativoResponse, ItemMapaComparativo, SugestaoIAResponse,
+    # Análise otimizada
+    AnaliseOtimizadaResponse, AnaliseItemResponse, PrecoFornecedorItem,
+    ResumoFornecedor, ItemOtimizado, CompraOtimizadaPorFornecedor,
+    GerarOCsOtimizadasRequest, GerarOCsOtimizadasResponse, OCGerada
 )
 from app.api.utils import (
     get_by_id, validate_fk, paginate_query, apply_search_filter,
@@ -1197,3 +1201,416 @@ def verificar_respostas_email(
         "propostas_extraidas": propostas_extraidas,
         "mensagem": f"Encontrados {len(emails)} email(s) de resposta. Revise os dados extraidos."
     }
+
+
+# ============ ANÁLISE OTIMIZADA POR ITEM ============
+
+@router.get("/solicitacoes/{solicitacao_id}/analise-otimizada", response_model=AnaliseOtimizadaResponse)
+def obter_analise_otimizada(
+    solicitacao_id: int,
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_current_tenant_id)
+):
+    """
+    Análise otimizada de propostas com comparativo por item.
+
+    Retorna:
+    - Matriz item × fornecedor com destaque do menor preço por item
+    - Comparativo: compra única vs compra otimizada (split)
+    - Economia potencial ao desmembrar entre fornecedores
+    - Recomendação automática
+    """
+    solicitacao = get_by_id(db, SolicitacaoCotacao, solicitacao_id, tenant_id, error_message="Solicitacao nao encontrada")
+
+    # Buscar itens da solicitação
+    itens_solicitacao = db.query(ItemSolicitacao).filter(
+        ItemSolicitacao.solicitacao_id == solicitacao_id
+    ).all()
+
+    if not itens_solicitacao:
+        raise HTTPException(status_code=400, detail="Solicitacao sem itens")
+
+    # Buscar propostas recebidas
+    propostas = db.query(PropostaFornecedor).filter(
+        PropostaFornecedor.solicitacao_id == solicitacao_id,
+        PropostaFornecedor.status.in_([StatusProposta.RECEBIDA, StatusProposta.VENCEDORA])
+    ).all()
+
+    if len(propostas) < 1:
+        raise HTTPException(status_code=400, detail="Nenhuma proposta recebida para analise")
+
+    # Mapear fornecedores e propostas
+    fornecedores_map = {}
+    propostas_map = {}
+    for proposta in propostas:
+        fornecedor = db.query(Fornecedor).filter(Fornecedor.id == proposta.fornecedor_id).first()
+        fornecedores_map[proposta.fornecedor_id] = fornecedor
+        propostas_map[proposta.fornecedor_id] = proposta
+
+    # Construir análise por item
+    itens_analise = []
+    melhor_por_item = {}  # {item_solicitacao_id: {fornecedor_id, preco_total, item_proposta_id, ...}}
+
+    for item_solic in itens_solicitacao:
+        produto = db.query(Produto).filter(Produto.id == item_solic.produto_id).first()
+
+        precos_fornecedores = []
+        menor_preco_total = None
+        fornecedor_menor_id = None
+        fornecedor_menor_nome = None
+        menor_preco_unitario = None
+
+        for proposta in propostas:
+            # Buscar item da proposta correspondente
+            item_proposta = db.query(ItemProposta).filter(
+                ItemProposta.proposta_id == proposta.id,
+                ItemProposta.item_solicitacao_id == item_solic.id
+            ).first()
+
+            if not item_proposta:
+                continue
+
+            fornecedor = fornecedores_map.get(proposta.fornecedor_id)
+            if not fornecedor:
+                continue
+
+            # Calcular preço final
+            preco_unitario = float(item_proposta.preco_unitario or 0)
+            desconto = float(item_proposta.desconto_percentual or 0)
+            preco_final = preco_unitario * (1 - desconto / 100)
+            quantidade = float(item_solic.quantidade)
+            preco_total = preco_final * quantidade
+
+            preco_info = PrecoFornecedorItem(
+                fornecedor_id=proposta.fornecedor_id,
+                fornecedor_nome=fornecedor.razao_social,
+                proposta_id=proposta.id,
+                item_proposta_id=item_proposta.id,
+                preco_unitario=Decimal(str(preco_unitario)),
+                desconto_percentual=Decimal(str(desconto)),
+                preco_final=Decimal(str(round(preco_final, 2))),
+                preco_total=Decimal(str(round(preco_total, 2))),
+                prazo_entrega=item_proposta.prazo_entrega_item or proposta.prazo_entrega,
+                condicoes_pagamento=proposta.condicoes_pagamento,
+                marca_oferecida=item_proposta.marca_oferecida,
+                is_menor_preco=False
+            )
+            precos_fornecedores.append(preco_info)
+
+            # Verificar se é menor preço
+            if menor_preco_total is None or preco_total < menor_preco_total:
+                menor_preco_total = preco_total
+                menor_preco_unitario = preco_final
+                fornecedor_menor_id = proposta.fornecedor_id
+                fornecedor_menor_nome = fornecedor.razao_social
+                melhor_por_item[item_solic.id] = {
+                    "fornecedor_id": proposta.fornecedor_id,
+                    "fornecedor_nome": fornecedor.razao_social,
+                    "proposta_id": proposta.id,
+                    "item_proposta_id": item_proposta.id,
+                    "preco_unitario": preco_final,
+                    "preco_total": preco_total,
+                    "produto_id": item_solic.produto_id,
+                    "produto_nome": produto.nome if produto else "N/A",
+                    "quantidade": quantidade
+                }
+
+        # Marcar menor preço e calcular diferenças
+        for preco in precos_fornecedores:
+            if preco.fornecedor_id == fornecedor_menor_id:
+                preco.is_menor_preco = True
+            if menor_preco_total and float(preco.preco_total) > 0:
+                diff = ((float(preco.preco_total) - menor_preco_total) / menor_preco_total) * 100
+                preco.diferenca_percentual = Decimal(str(round(diff, 2)))
+
+        item_analise = AnaliseItemResponse(
+            item_solicitacao_id=item_solic.id,
+            produto_id=item_solic.produto_id,
+            produto_nome=produto.nome if produto else "N/A",
+            produto_codigo=produto.codigo if produto else None,
+            quantidade=item_solic.quantidade,
+            unidade_medida=item_solic.unidade_medida,
+            precos_fornecedores=precos_fornecedores,
+            menor_preco_unitario=Decimal(str(round(menor_preco_unitario, 2))) if menor_preco_unitario else None,
+            menor_preco_total=Decimal(str(round(menor_preco_total, 2))) if menor_preco_total else None,
+            fornecedor_menor_preco_id=fornecedor_menor_id,
+            fornecedor_menor_preco_nome=fornecedor_menor_nome
+        )
+        itens_analise.append(item_analise)
+
+    # Calcular resumo por fornecedor
+    resumo_fornecedores = []
+    for proposta in propostas:
+        fornecedor = fornecedores_map.get(proposta.fornecedor_id)
+        if not fornecedor:
+            continue
+
+        # Contar itens com menor preço deste fornecedor
+        qtd_menor_preco = sum(
+            1 for item_id, data in melhor_por_item.items()
+            if data["fornecedor_id"] == proposta.fornecedor_id
+        )
+
+        resumo = ResumoFornecedor(
+            fornecedor_id=proposta.fornecedor_id,
+            fornecedor_nome=fornecedor.razao_social,
+            proposta_id=proposta.id,
+            valor_total=proposta.valor_total or Decimal(0),
+            prazo_entrega=proposta.prazo_entrega,
+            condicoes_pagamento=proposta.condicoes_pagamento,
+            qtd_itens_cotados=len(proposta.itens),
+            qtd_itens_menor_preco=qtd_menor_preco
+        )
+        resumo_fornecedores.append(resumo)
+
+    # Ordenar por valor total
+    resumo_fornecedores.sort(key=lambda x: float(x.valor_total or 0))
+
+    # Menor valor global (compra única)
+    if not resumo_fornecedores:
+        raise HTTPException(status_code=400, detail="Nenhum fornecedor com proposta valida")
+
+    menor_global = resumo_fornecedores[0]
+    menor_valor_global = float(menor_global.valor_total or 0)
+
+    # Calcular valor otimizado (melhor por item)
+    valor_otimizado = sum(data["preco_total"] for data in melhor_por_item.values())
+
+    # Economia
+    economia = menor_valor_global - valor_otimizado
+    economia_percentual = (economia / menor_valor_global * 100) if menor_valor_global > 0 else 0
+
+    # Agrupar compra otimizada por fornecedor
+    compra_por_fornecedor = {}
+    for item_id, data in melhor_por_item.items():
+        forn_id = data["fornecedor_id"]
+        if forn_id not in compra_por_fornecedor:
+            proposta = propostas_map.get(forn_id)
+            compra_por_fornecedor[forn_id] = {
+                "fornecedor_id": forn_id,
+                "fornecedor_nome": data["fornecedor_nome"],
+                "proposta_id": data["proposta_id"],
+                "itens": [],
+                "valor_total": 0,
+                "prazo_entrega": proposta.prazo_entrega if proposta else None,
+                "condicoes_pagamento": proposta.condicoes_pagamento if proposta else None
+            }
+
+        compra_por_fornecedor[forn_id]["itens"].append(ItemOtimizado(
+            item_solicitacao_id=item_id,
+            produto_id=data["produto_id"],
+            produto_nome=data["produto_nome"],
+            quantidade=Decimal(str(data["quantidade"])),
+            fornecedor_id=forn_id,
+            fornecedor_nome=data["fornecedor_nome"],
+            proposta_id=data["proposta_id"],
+            item_proposta_id=data["item_proposta_id"],
+            preco_unitario=Decimal(str(round(data["preco_unitario"], 2))),
+            preco_total=Decimal(str(round(data["preco_total"], 2)))
+        ))
+        compra_por_fornecedor[forn_id]["valor_total"] += data["preco_total"]
+
+    compra_otimizada = [
+        CompraOtimizadaPorFornecedor(
+            fornecedor_id=data["fornecedor_id"],
+            fornecedor_nome=data["fornecedor_nome"],
+            proposta_id=data["proposta_id"],
+            itens=data["itens"],
+            valor_total=Decimal(str(round(data["valor_total"], 2))),
+            prazo_entrega=data["prazo_entrega"],
+            condicoes_pagamento=data["condicoes_pagamento"]
+        )
+        for data in compra_por_fornecedor.values()
+    ]
+
+    # Recomendação
+    qtd_fornecedores_otimizado = len(compra_por_fornecedor)
+    if economia > 0 and economia_percentual >= 5 and qtd_fornecedores_otimizado <= 3:
+        recomendacao = "COMPRA_OTIMIZADA"
+        justificativa = f"Economia de R$ {economia:.2f} ({economia_percentual:.1f}%) ao dividir entre {qtd_fornecedores_otimizado} fornecedor(es)"
+    elif economia > 0 and qtd_fornecedores_otimizado > 3:
+        recomendacao = "COMPRA_UNICA"
+        justificativa = f"Embora haja economia de R$ {economia:.2f}, seriam necessárias {qtd_fornecedores_otimizado} OCs. Recomendado compra única para simplificar."
+    else:
+        recomendacao = "COMPRA_UNICA"
+        justificativa = f"Compra única de {menor_global.fornecedor_nome} tem melhor custo-benefício"
+
+    return AnaliseOtimizadaResponse(
+        solicitacao_id=solicitacao.id,
+        solicitacao_numero=solicitacao.numero,
+        solicitacao_titulo=solicitacao.titulo,
+        itens=itens_analise,
+        resumo_fornecedores=resumo_fornecedores,
+        menor_valor_global=Decimal(str(round(menor_valor_global, 2))),
+        fornecedor_menor_global_id=menor_global.fornecedor_id,
+        fornecedor_menor_global_nome=menor_global.fornecedor_nome,
+        valor_otimizado=Decimal(str(round(valor_otimizado, 2))),
+        economia_otimizada=Decimal(str(round(economia, 2))),
+        economia_percentual=Decimal(str(round(economia_percentual, 2))),
+        compra_otimizada=compra_otimizada,
+        recomendacao=recomendacao,
+        justificativa=justificativa
+    )
+
+
+@router.post("/solicitacoes/{solicitacao_id}/gerar-ocs-otimizadas", response_model=GerarOCsOtimizadasResponse)
+def gerar_ocs_otimizadas(
+    solicitacao_id: int,
+    request: GerarOCsOtimizadasRequest,
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_current_tenant_id),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    Gerar múltiplas Ordens de Compra a partir de seleção otimizada.
+
+    Permite escolher o melhor fornecedor para cada item,
+    gerando automaticamente uma OC por fornecedor selecionado.
+    """
+    from app.models.pedido import PedidoCompra, ItemPedido, StatusPedido
+
+    solicitacao = get_by_id(db, SolicitacaoCotacao, solicitacao_id, tenant_id, error_message="Solicitacao nao encontrada")
+
+    # Validar que solicitação está em status válido
+    if solicitacao.status == StatusSolicitacao.CANCELADA:
+        raise HTTPException(status_code=400, detail="Solicitacao cancelada")
+
+    if solicitacao.status == StatusSolicitacao.FINALIZADA:
+        raise HTTPException(status_code=400, detail="Solicitacao ja finalizada. Ja existe OC gerada.")
+
+    # Agrupar seleções por fornecedor
+    selecoes_por_fornecedor = {}
+    for selecao in request.selecoes:
+        forn_id = selecao["fornecedor_id"]
+        if forn_id not in selecoes_por_fornecedor:
+            selecoes_por_fornecedor[forn_id] = []
+        selecoes_por_fornecedor[forn_id].append(selecao)
+
+    ocs_geradas = []
+    valor_total_geral = Decimal(0)
+
+    # Gerar uma OC por fornecedor
+    for fornecedor_id, selecoes in selecoes_por_fornecedor.items():
+        fornecedor = db.query(Fornecedor).filter(
+            Fornecedor.id == fornecedor_id,
+            Fornecedor.tenant_id == tenant_id
+        ).first()
+
+        if not fornecedor:
+            raise HTTPException(status_code=400, detail=f"Fornecedor {fornecedor_id} nao encontrado")
+
+        # Buscar proposta do fornecedor
+        proposta = db.query(PropostaFornecedor).filter(
+            PropostaFornecedor.solicitacao_id == solicitacao_id,
+            PropostaFornecedor.fornecedor_id == fornecedor_id
+        ).first()
+
+        if not proposta:
+            raise HTTPException(status_code=400, detail=f"Proposta do fornecedor {fornecedor.razao_social} nao encontrada")
+
+        # Criar Pedido de Compra
+        numero_pedido = generate_sequential_number(db, PedidoCompra, Prefixes.PEDIDO_COMPRA, tenant_id)
+
+        pedido = PedidoCompra(
+            numero=numero_pedido,
+            solicitacao_cotacao_id=solicitacao.id,
+            proposta_id=proposta.id,
+            fornecedor_id=fornecedor_id,
+            status=StatusPedido.RASCUNHO,
+            data_pedido=datetime.utcnow(),
+            condicoes_pagamento=proposta.condicoes_pagamento,
+            prazo_entrega=proposta.prazo_entrega,
+            frete_tipo=proposta.frete_tipo,
+            observacoes=f"Gerado de análise otimizada - {request.justificativa}",
+            tenant_id=tenant_id,
+            created_by=current_user.id
+        )
+        db.add(pedido)
+        db.flush()
+
+        valor_pedido = Decimal(0)
+
+        # Adicionar itens ao pedido
+        for selecao in selecoes:
+            item_proposta = db.query(ItemProposta).filter(
+                ItemProposta.id == selecao["item_proposta_id"]
+            ).first()
+
+            if not item_proposta:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Item de proposta {selecao['item_proposta_id']} nao encontrado"
+                )
+
+            item_solicitacao = db.query(ItemSolicitacao).filter(
+                ItemSolicitacao.id == selecao["item_solicitacao_id"]
+            ).first()
+
+            if not item_solicitacao:
+                continue
+
+            produto = db.query(Produto).filter(Produto.id == item_solicitacao.produto_id).first()
+
+            # Calcular valor
+            preco_unitario = float(item_proposta.preco_unitario or 0)
+            desconto = float(item_proposta.desconto_percentual or 0)
+            preco_final = preco_unitario * (1 - desconto / 100)
+            quantidade = float(item_solicitacao.quantidade)
+            valor_item = Decimal(str(round(preco_final * quantidade, 2)))
+
+            item_pedido = ItemPedido(
+                pedido_id=pedido.id,
+                produto_id=item_solicitacao.produto_id,
+                item_proposta_id=item_proposta.id,
+                quantidade=item_solicitacao.quantidade,
+                unidade_medida=item_solicitacao.unidade_medida,
+                preco_unitario=Decimal(str(round(preco_final, 4))),
+                desconto_percentual=Decimal(str(desconto)),
+                valor_total=valor_item,
+                especificacoes=item_solicitacao.especificacoes,
+                marca=item_proposta.marca_oferecida,
+                prazo_entrega_item=item_proposta.prazo_entrega_item,
+                tenant_id=tenant_id
+            )
+            db.add(item_pedido)
+            valor_pedido += valor_item
+
+        # Atualizar totais do pedido
+        pedido.valor_produtos = valor_pedido
+        pedido.valor_frete = proposta.frete_valor or Decimal(0)
+        pedido.valor_desconto = Decimal(0)
+        pedido.valor_total = valor_pedido + (proposta.frete_valor or Decimal(0))
+
+        valor_total_geral += pedido.valor_total
+
+        ocs_geradas.append(OCGerada(
+            pedido_id=pedido.id,
+            pedido_numero=pedido.numero,
+            fornecedor_id=fornecedor_id,
+            fornecedor_nome=fornecedor.razao_social,
+            valor_total=pedido.valor_total,
+            qtd_itens=len(selecoes)
+        ))
+
+    # Atualizar status da solicitação
+    solicitacao.status = StatusSolicitacao.FINALIZADA
+    solicitacao.data_fechamento = datetime.utcnow()
+    solicitacao.justificativa_escolha = f"Compra otimizada - {request.justificativa}"
+
+    db.commit()
+
+    # Calcular economia vs menor global
+    propostas = db.query(PropostaFornecedor).filter(
+        PropostaFornecedor.solicitacao_id == solicitacao_id,
+        PropostaFornecedor.status.in_([StatusProposta.RECEBIDA, StatusProposta.VENCEDORA])
+    ).all()
+
+    menor_global = min(float(p.valor_total or 0) for p in propostas) if propostas else 0
+    economia = Decimal(str(round(menor_global - float(valor_total_geral), 2))) if menor_global > 0 else None
+
+    return GerarOCsOtimizadasResponse(
+        solicitacao_id=solicitacao_id,
+        ocs_geradas=ocs_geradas,
+        valor_total=valor_total_geral,
+        economia_vs_menor_global=economia
+    )
