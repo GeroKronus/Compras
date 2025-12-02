@@ -182,7 +182,14 @@ Analise todas as propostas considerando os criterios de avaliacao e responda APE
         return prompt
 
 
-    def extrair_dados_proposta_email(self, corpo_email: str, conteudo_anexo: str = None) -> dict:
+    def extrair_dados_proposta_email(
+        self,
+        corpo_email: str,
+        conteudo_anexo: str = None,
+        db = None,
+        tenant_id: int = None,
+        email_id: int = None
+    ) -> dict:
         """
         Extrai dados de proposta de um email usando Claude.
 
@@ -292,6 +299,21 @@ IMPORTANTE:
                 messages=[{"role": "user", "content": prompt}],
                 system="Voce e um assistente PRECISO na extracao de dados comerciais. Extraia precos, prazos e condicoes encontrados no texto. Se um campo estiver vazio ou em branco, retorne null - NUNCA invente valores ou copie de outros itens. Cada item deve ter seu preco EXATO ou null se nao preenchido."
             )
+
+            # Registrar uso da IA se db e tenant_id foram fornecidos
+            if db and tenant_id:
+                from app.services.ia_usage_service import ia_usage_service
+                ia_usage_service.registrar_uso(
+                    db=db,
+                    tenant_id=tenant_id,
+                    tipo_operacao="extracao_email",
+                    modelo=self.MODEL,
+                    tokens_entrada=response.usage.input_tokens,
+                    tokens_saida=response.usage.output_tokens,
+                    referencia_id=email_id,
+                    referencia_tipo="email",
+                    descricao="Extracao de dados de proposta PDF/email"
+                )
 
             content = response.content[0].text
 

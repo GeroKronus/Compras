@@ -152,7 +152,10 @@ class EmailClassifier:
                             # Tentar extrair dados da proposta via IA
                             dados_extraidos = self._extrair_dados_proposta(
                                 email_data['corpo'],
-                                email_data.get('conteudo_pdf')
+                                email_data.get('conteudo_pdf'),
+                                db=db,
+                                tenant_id=tenant_id,
+                                email_id=email_processado.id
                             )
                             if dados_extraidos:
                                 email_processado.dados_extraidos = json.dumps(dados_extraidos)
@@ -771,7 +774,14 @@ Responda APENAS com JSON no formato:
 
         return None
 
-    def _extrair_dados_proposta(self, corpo: str, conteudo_pdf: str = None) -> Optional[dict]:
+    def _extrair_dados_proposta(
+        self,
+        corpo: str,
+        conteudo_pdf: str = None,
+        db = None,
+        tenant_id: int = None,
+        email_id: int = None
+    ) -> Optional[dict]:
         """
         Extrai dados da proposta do corpo do email usando IA
         Com FALLBACK para parsing direto do PDF quando IA falhar
@@ -779,6 +789,9 @@ Responda APENAS com JSON no formato:
         Args:
             corpo: Corpo do email
             conteudo_pdf: Conteudo extraido de anexos PDF (opcional)
+            db: Sessao do banco para registrar uso da IA
+            tenant_id: ID do tenant para registrar uso
+            email_id: ID do email para referencia
 
         Returns:
             Dict com dados extraidos ou None
@@ -789,7 +802,13 @@ Responda APENAS com JSON no formato:
 
         # Tentar usar IA primeiro (se disponivel)
         if ai_service.is_available:
-            resultado = ai_service.extrair_dados_proposta_email(corpo or "", conteudo_pdf)
+            resultado = ai_service.extrair_dados_proposta_email(
+                corpo or "",
+                conteudo_pdf,
+                db=db,
+                tenant_id=tenant_id,
+                email_id=email_id
+            )
             # Se IA retornou dados validos (sem erro), usar
             if resultado and 'error' not in resultado and resultado.get('itens'):
                 print(f"[CLASSIFICADOR] IA extraiu {len(resultado.get('itens', []))} itens")
@@ -1218,7 +1237,12 @@ Responda APENAS com JSON no formato:
 
             # Extrair dados se tiver corpo
             if email.corpo_completo:
-                dados = self._extrair_dados_proposta(email.corpo_completo)
+                dados = self._extrair_dados_proposta(
+                    email.corpo_completo,
+                    db=db,
+                    tenant_id=email.tenant_id,
+                    email_id=email.id
+                )
                 if dados:
                     email.dados_extraidos = json.dumps(dados)
 
