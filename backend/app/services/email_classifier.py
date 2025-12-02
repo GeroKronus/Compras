@@ -13,7 +13,8 @@ from app.models.cotacao import SolicitacaoCotacao, PropostaFornecedor, StatusPro
 from app.models.fornecedor import Fornecedor
 from app.services.email_service import email_service
 from app.services.ai_service import ai_service
-from app.services.telegram_service import telegram_service
+from app.services.telegram_service import TelegramService
+from app.models.tenant import Tenant
 
 
 class EmailClassifier:
@@ -1303,6 +1304,20 @@ Responda APENAS com JSON no formato:
             dados_extraidos: Dados extraídos da proposta
         """
         try:
+            # Buscar tenant para obter configurações do Telegram
+            tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+
+            if not tenant:
+                print(f"[TELEGRAM] Tenant {tenant_id} não encontrado")
+                return
+
+            # Criar serviço de Telegram com configurações do tenant
+            telegram_service = TelegramService.from_tenant(tenant)
+
+            if not telegram_service.is_configured:
+                print(f"[TELEGRAM] Telegram não configurado para tenant {tenant_id}")
+                return
+
             # Buscar informações da solicitação
             solicitacao = db.query(SolicitacaoCotacao).filter(
                 SolicitacaoCotacao.id == solicitacao_id,

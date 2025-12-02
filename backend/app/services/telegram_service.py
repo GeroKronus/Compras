@@ -1,22 +1,48 @@
 """
 Serviço de Notificações via Telegram
 Envia alertas quando propostas são recebidas por email
+Configurações por tenant (multi-tenant)
 """
 import requests
 from datetime import datetime
 from typing import Optional
-from app.config import settings
 
 
 class TelegramService:
     """
     Serviço para enviar notificações via Telegram Bot API
+    Configurações são passadas por tenant (não usa variáveis globais)
     """
 
-    def __init__(self):
-        self.token = settings.TELEGRAM_BOT_TOKEN
-        self.chat_id = settings.TELEGRAM_CHAT_ID
-        self.enabled = settings.TELEGRAM_ENABLED
+    def __init__(self, token: Optional[str] = None, chat_id: Optional[str] = None, enabled: bool = False):
+        """
+        Inicializa o serviço com configurações do tenant
+
+        Args:
+            token: Bot token do Telegram
+            chat_id: ID do chat/grupo para enviar mensagens
+            enabled: Se as notificações estão habilitadas
+        """
+        self.token = token
+        self.chat_id = chat_id
+        self.enabled = enabled
+
+    @classmethod
+    def from_tenant(cls, tenant) -> 'TelegramService':
+        """
+        Cria instância a partir de um objeto Tenant
+
+        Args:
+            tenant: Objeto Tenant do SQLAlchemy
+
+        Returns:
+            Instância configurada do TelegramService
+        """
+        return cls(
+            token=tenant.telegram_bot_token,
+            chat_id=tenant.telegram_chat_id,
+            enabled=tenant.telegram_enabled or False
+        )
 
     @property
     def is_configured(self) -> bool:
@@ -177,7 +203,3 @@ class TelegramService:
 
         mensagem = "\n".join(linhas)
         return self._send_message(mensagem)
-
-
-# Instância global do serviço
-telegram_service = TelegramService()

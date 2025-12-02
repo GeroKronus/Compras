@@ -45,5 +45,10 @@ class Tenant(Base, TimestampMixin):
     email_contato = Column(String(200), nullable=False)
     telefone = Column(String(20), nullable=True)
 
+    # Configurações do Telegram (notificações)
+    telegram_bot_token = Column(String(100), nullable=True)
+    telegram_chat_id = Column(String(50), nullable=True)
+    telegram_enabled = Column(Boolean, default=False, nullable=False)
+
     def __repr__(self):
         return f"<Tenant {self.nome_empresa} (ID: {self.id})>"

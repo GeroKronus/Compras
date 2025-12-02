@@ -55,6 +55,10 @@ class TenantUpdate(BaseModel):
     ia_auto_aprovacao: Optional[bool] = None
     ia_limite_auto_aprovacao: Optional[float] = None
     compartilhar_dados_agregados: Optional[bool] = None
+    # Telegram
+    telegram_bot_token: Optional[str] = Field(None, max_length=100)
+    telegram_chat_id: Optional[str] = Field(None, max_length=50)
+    telegram_enabled: Optional[bool] = None
 
 
 class TenantResponse(TenantBase):
@@ -68,6 +72,9 @@ class TenantResponse(TenantBase):
     ia_auto_aprovacao: bool
     ia_limite_auto_aprovacao: float
     compartilhar_dados_agregados: bool
+    # Telegram (token oculto por segurança)
+    telegram_enabled: bool = False
+    telegram_chat_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
