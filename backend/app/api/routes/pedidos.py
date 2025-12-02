@@ -434,8 +434,9 @@ def enviar_para_fornecedor(
     db: Session = Depends(get_db),
     tenant_id: int = Depends(get_current_tenant_id)
 ):
-    """Enviar pedido ao fornecedor por email"""
+    """Enviar pedido ao fornecedor por email com PDF anexado"""
     from app.services.email_service import EmailService
+    from app.services.pdf_service import PDFService
     from app.models.tenant import Tenant
 
     pedido = get_by_id(
@@ -460,7 +461,7 @@ def enviar_para_fornecedor(
     # Buscar tenant para nome da empresa
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
 
-    # Preparar itens para email
+    # Preparar itens para email/PDF
     itens_email = []
     for item in pedido.itens:
         itens_email.append({
@@ -472,7 +473,24 @@ def enviar_para_fornecedor(
             'especificacoes': item.especificacoes
         })
 
-    # Enviar email
+    # Gerar PDF da Ordem de Compra
+    pdf_service = PDFService()
+    pdf_bytes = pdf_service.gerar_ordem_compra_pdf(
+        pedido_numero=pedido.numero,
+        fornecedor_nome=pedido.fornecedor.razao_social or pedido.fornecedor.nome_fantasia,
+        fornecedor_cnpj=pedido.fornecedor.cnpj,
+        itens=itens_email,
+        valor_total=float(pedido.valor_total or 0),
+        prazo_entrega=pedido.prazo_entrega,
+        condicao_pagamento=pedido.condicoes_pagamento,
+        frete_tipo=pedido.frete_tipo,
+        observacoes=pedido.observacoes,
+        empresa_nome=tenant.nome_empresa if tenant else None,
+        data_pedido=pedido.data_pedido
+    )
+    print(f"[PEDIDO] PDF gerado: {len(pdf_bytes)} bytes")
+
+    # Enviar email com PDF anexado
     email_service = EmailService()
 
     sucesso = email_service.enviar_ordem_compra(
@@ -485,7 +503,8 @@ def enviar_para_fornecedor(
         condicao_pagamento=pedido.condicoes_pagamento,
         frete_tipo=pedido.frete_tipo,
         observacoes=pedido.observacoes,
-        empresa_nome=tenant.nome_empresa if tenant else None
+        empresa_nome=tenant.nome_empresa if tenant else None,
+        pdf_anexo=pdf_bytes
     )
 
     if not sucesso:
@@ -500,7 +519,7 @@ def enviar_para_fornecedor(
     db.commit()
     db.refresh(pedido)
 
-    print(f"[PEDIDO] Email de OC {pedido.numero} enviado para {pedido.fornecedor.email_principal}")
+    print(f"[PEDIDO] Email de OC {pedido.numero} com PDF enviado para {pedido.fornecedor.email_principal}")
 
     return _enrich_pedido_response(pedido, db)
 

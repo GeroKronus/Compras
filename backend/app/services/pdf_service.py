@@ -367,5 +367,213 @@ class PDFService:
         c.drawCentredString(width / 2, 28, f"Referência: {solicitacao_id}")
 
 
+    def gerar_ordem_compra_pdf(
+        self,
+        pedido_numero: str,
+        fornecedor_nome: str,
+        fornecedor_cnpj: Optional[str],
+        itens: List[dict],
+        valor_total: float,
+        prazo_entrega: Optional[int] = None,
+        condicao_pagamento: Optional[str] = None,
+        frete_tipo: Optional[str] = None,
+        observacoes: Optional[str] = None,
+        empresa_nome: Optional[str] = None,
+        data_pedido: Optional[datetime] = None
+    ) -> bytes:
+        """
+        Gera PDF da Ordem de Compra
+
+        Returns:
+            bytes do PDF gerado
+        """
+        buffer = io.BytesIO()
+        c = canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
+
+        # Header azul
+        c.setFillColor(colors.HexColor('#1d4ed8'))
+        c.rect(0, height - 100, width, 100, fill=True, stroke=False)
+
+        c.setFillColor(colors.white)
+        c.setFont("Helvetica-Bold", 24)
+        c.drawCentredString(width / 2, height - 45, "ORDEM DE COMPRA")
+
+        c.setFont("Helvetica-Bold", 16)
+        c.drawCentredString(width / 2, height - 75, pedido_numero)
+
+        # Data
+        data_str = (data_pedido or datetime.now()).strftime('%d/%m/%Y')
+        c.setFillColor(colors.HexColor('#333333'))
+        c.setFont("Helvetica", 10)
+        c.drawRightString(width - 20, height - 115, f"Data: {data_str}")
+
+        y = height - 140
+
+        # Comprador
+        if empresa_nome:
+            c.setFillColor(colors.HexColor('#1d4ed8'))
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(20, y, "COMPRADOR")
+            y -= 5
+            c.setStrokeColor(colors.HexColor('#1d4ed8'))
+            c.setFillColor(colors.HexColor('#eff6ff'))
+            c.roundRect(20, y - 35, width - 40, 35, 3, fill=True, stroke=True)
+            c.setFillColor(colors.HexColor('#333333'))
+            c.setFont("Helvetica-Bold", 10)
+            c.drawString(30, y - 22, empresa_nome)
+            y -= 50
+
+        # Fornecedor
+        c.setFillColor(colors.HexColor('#10b981'))
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(20, y, "FORNECEDOR")
+        y -= 5
+        c.setStrokeColor(colors.HexColor('#10b981'))
+        c.setFillColor(colors.HexColor('#f0fdf4'))
+        box_height = 35 if not fornecedor_cnpj else 50
+        c.roundRect(20, y - box_height, width - 40, box_height, 3, fill=True, stroke=True)
+        c.setFillColor(colors.HexColor('#333333'))
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(30, y - 18, fornecedor_nome)
+        if fornecedor_cnpj:
+            c.setFont("Helvetica", 9)
+            c.drawString(30, y - 35, f"CNPJ: {fornecedor_cnpj}")
+        y -= box_height + 20
+
+        # Itens do Pedido
+        c.setFillColor(colors.HexColor('#1d4ed8'))
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(20, y, "ITENS DO PEDIDO")
+        y -= 25
+
+        # Header da tabela - PRODUTO com mais espaço
+        c.setFillColor(colors.HexColor('#1d4ed8'))
+        c.rect(20, y - 18, width - 40, 18, fill=True, stroke=False)
+
+        c.setFillColor(colors.white)
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(25, y - 13, "#")
+        c.drawString(40, y - 13, "PRODUTO")
+        c.drawString(width - 185, y - 13, "QTD")
+        c.drawString(width - 145, y - 13, "UN")
+        c.drawString(width - 110, y - 13, "PREÇO UNIT.")
+        c.drawString(width - 55, y - 13, "TOTAL")
+        y -= 22
+
+        # Itens
+        c.setFont("Helvetica", 8)
+        for i, item in enumerate(itens, 1):
+            if i % 2 == 0:
+                c.setFillColor(colors.HexColor('#f9fafb'))
+                c.rect(20, y - 15, width - 40, 18, fill=True, stroke=False)
+
+            c.setFillColor(colors.HexColor('#333333'))
+            c.drawString(25, y - 10, str(i))
+
+            # Produto - usar mais espaço (até 55 chars)
+            produto = item.get('produto_nome', 'N/A')
+            if len(produto) > 55:
+                produto = produto[:52] + "..."
+            c.drawString(40, y - 10, produto)
+
+            c.drawRightString(width - 165, y - 10, f"{float(item.get('quantidade', 0)):.2f}")
+            c.drawString(width - 145, y - 10, item.get('unidade', '')[:5])
+            c.drawRightString(width - 75, y - 10, f"R$ {float(item.get('preco_unitario', 0)):,.2f}")
+            c.drawRightString(width - 25, y - 10, f"R$ {float(item.get('valor_total', 0)):,.2f}")
+
+            y -= 18
+            if y < 200:  # Nova página se necessário
+                c.showPage()
+                y = height - 50
+
+        # Linha total
+        c.setFillColor(colors.HexColor('#eff6ff'))
+        c.rect(20, y - 18, width - 40, 18, fill=True, stroke=False)
+        c.setFillColor(colors.HexColor('#1d4ed8'))
+        c.setFont("Helvetica-Bold", 10)
+        c.drawRightString(width - 75, y - 12, "TOTAL:")
+        c.drawRightString(width - 25, y - 12, f"R$ {valor_total:,.2f}")
+        y -= 35
+
+        # Condições
+        if prazo_entrega or condicao_pagamento or frete_tipo:
+            c.setFillColor(colors.HexColor('#1d4ed8'))
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(20, y, "CONDIÇÕES")
+            y -= 5
+            c.setStrokeColor(colors.HexColor('#d1d5db'))
+            c.setFillColor(colors.HexColor('#f9fafb'))
+            c.roundRect(20, y - 55, width - 40, 55, 3, fill=True, stroke=True)
+
+            c.setFillColor(colors.HexColor('#333333'))
+            c.setFont("Helvetica", 9)
+            line_y = y - 18
+            if prazo_entrega:
+                c.setFont("Helvetica-Bold", 9)
+                c.drawString(30, line_y, "Prazo de Entrega:")
+                c.setFont("Helvetica", 9)
+                c.drawString(130, line_y, f"{prazo_entrega} dias")
+                line_y -= 15
+            if condicao_pagamento:
+                c.setFont("Helvetica-Bold", 9)
+                c.drawString(30, line_y, "Pagamento:")
+                c.setFont("Helvetica", 9)
+                c.drawString(100, line_y, condicao_pagamento)
+                line_y -= 15
+            if frete_tipo:
+                c.setFont("Helvetica-Bold", 9)
+                c.drawString(30, line_y, "Frete:")
+                c.setFont("Helvetica", 9)
+                c.drawString(70, line_y, frete_tipo)
+            y -= 70
+
+        # Observações
+        if observacoes:
+            c.setFillColor(colors.HexColor('#1d4ed8'))
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(20, y, "OBSERVAÇÕES")
+            y -= 5
+            c.setFillColor(colors.HexColor('#333333'))
+            c.setFont("Helvetica", 9)
+            # Quebrar observações em linhas
+            words = observacoes.split()
+            line = ""
+            for word in words:
+                if c.stringWidth(line + " " + word, "Helvetica", 9) < width - 60:
+                    line = line + " " + word if line else word
+                else:
+                    y -= 12
+                    c.drawString(25, y, line)
+                    line = word
+            if line:
+                y -= 12
+                c.drawString(25, y, line)
+            y -= 20
+
+        # Importante - destacado
+        if y > 140:
+            c.setStrokeColor(colors.HexColor('#ef4444'))
+            c.setFillColor(colors.HexColor('#fef2f2'))
+            c.roundRect(20, 80, width - 40, 55, 3, fill=True, stroke=True)
+
+            c.setFillColor(colors.HexColor('#991b1b'))
+            c.setFont("Helvetica-Bold", 10)
+            c.drawString(30, 120, "IMPORTANTE:")
+            c.setFont("Helvetica", 9)
+            c.drawString(30, 105, "• Por favor, confirme o recebimento deste pedido")
+            c.drawString(30, 92, "• Informe a data prevista de entrega")
+
+        # Rodapé
+        c.setFillColor(colors.HexColor('#666666'))
+        c.setFont("Helvetica", 8)
+        c.drawCentredString(width / 2, 50, f"Documento gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M')} - Sistema de Gestão de Compras")
+        c.drawCentredString(width / 2, 38, f"Referência: {pedido_numero}")
+
+        c.save()
+        buffer.seek(0)
+        return buffer.getvalue()
+
+
 # Instância singleton
 pdf_service = PDFService()
