@@ -474,7 +474,6 @@ def enviar_para_fornecedor(
 
     # Enviar email
     email_service = EmailService()
-    email_service.configure_from_tenant(tenant)
 
     sucesso = email_service.enviar_ordem_compra(
         fornecedor_email=pedido.fornecedor.email_principal,
@@ -544,6 +543,27 @@ def cancelar_pedido(
     pedido.cancelado_por = current_user.id
     pedido.motivo_cancelamento = data.motivo
     pedido.data_cancelamento = datetime.utcnow()
+    db.commit()
+    db.refresh(pedido)
+
+    return _enrich_pedido_response(pedido, db)
+
+
+@router.post("/{pedido_id}/resetar-para-aprovado", response_model=PedidoCompraResponse)
+def resetar_para_aprovado(
+    pedido_id: int,
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_current_tenant_id)
+):
+    """Resetar pedido para status APROVADO (para teste de envio de email)"""
+    pedido = get_by_id(db, PedidoCompra, pedido_id, tenant_id, error_message="Pedido nao encontrado")
+
+    if pedido.status not in [StatusPedido.ENVIADO_FORNECEDOR, StatusPedido.CONFIRMADO]:
+        raise HTTPException(status_code=400, detail="Pedido precisa estar enviado ou confirmado")
+
+    pedido.status = StatusPedido.APROVADO
+    pedido.data_envio = None
+    pedido.data_confirmacao = None
     db.commit()
     db.refresh(pedido)
 
