@@ -128,10 +128,6 @@ export default function MapaComparativo() {
       alert('Selecione uma proposta');
       return;
     }
-    if (justificativa.length < 10) {
-      alert('A justificativa deve ter pelo menos 10 caracteres');
-      return;
-    }
     escolherVencedorMutation.mutate({
       proposta_id: selectedPropostaId,
       justificativa,
@@ -487,15 +483,14 @@ export default function MapaComparativo() {
               </p>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Justificativa da Escolha *
+                  Justificativa da Escolha
                 </label>
                 <textarea
                   value={justificativa}
                   onChange={(e) => setJustificativa(e.target.value)}
                   rows={4}
-                  placeholder="Descreva os motivos da escolha deste fornecedor (minimo 10 caracteres)"
+                  placeholder="Descreva os motivos da escolha deste fornecedor (opcional)"
                   className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-                  required
                 />
               </div>
               <div className="flex items-center bg-blue-50 p-3 rounded-lg">
@@ -527,7 +522,7 @@ export default function MapaComparativo() {
               </button>
               <button
                 onClick={handleEscolherVencedor}
-                disabled={escolherVencedorMutation.isPending || justificativa.length < 10}
+                disabled={escolherVencedorMutation.isPending}
                 className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
               >
                 {escolherVencedorMutation.isPending ? 'Confirmando...' : 'Confirmar Vencedor'}

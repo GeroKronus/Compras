@@ -214,7 +214,7 @@ class RegistrarPropostaRequest(PropostaFornecedorBase):
 
 class EscolherVencedorRequest(BaseModel):
     proposta_id: int
-    justificativa: str = Field(..., min_length=10)
+    justificativa: Optional[str] = None
 
 
 # ============ MAPA COMPARATIVO ============
@@ -351,7 +351,7 @@ class GerarOCsOtimizadasRequest(BaseModel):
     solicitacao_id: int
     # Lista de seleções: qual fornecedor para cada item
     selecoes: List[dict]  # [{item_solicitacao_id, fornecedor_id, item_proposta_id}]
-    justificativa: str = Field(..., min_length=10)
+    justificativa: Optional[str] = None
 
 
 class OCGerada(BaseModel):

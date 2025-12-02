@@ -284,10 +284,6 @@ export default function AnaliseOtimizada() {
 
   // Confirmar e gerar OCs
   const confirmarGeracaoOCs = () => {
-    if (justificativa.length < 10) {
-      alert('A justificativa deve ter pelo menos 10 caracteres');
-      return;
-    }
 
     const selecoesArray = Object.entries(selecoes).map(([itemId, sel]) => ({
       item_solicitacao_id: Number(itemId),
@@ -721,13 +717,13 @@ export default function AnaliseOtimizada() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Justificativa *
+                  Justificativa
                 </label>
                 <textarea
                   value={justificativa}
                   onChange={(e) => setJustificativa(e.target.value)}
                   rows={3}
-                  placeholder="Descreva os motivos da escolha (minimo 10 caracteres)"
+                  placeholder="Descreva os motivos da escolha (opcional)"
                   className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
                 />
               </div>
@@ -745,7 +741,7 @@ export default function AnaliseOtimizada() {
               </Button>
               <Button
                 onClick={confirmarGeracaoOCs}
-                disabled={gerarOCsMutation.isPending || justificativa.length < 10}
+                disabled={gerarOCsMutation.isPending}
                 className="bg-green-600 hover:bg-green-700"
               >
                 {gerarOCsMutation.isPending ? 'Gerando...' : 'Confirmar e Gerar'}
