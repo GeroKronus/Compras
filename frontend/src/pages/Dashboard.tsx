@@ -619,19 +619,6 @@ export default function Dashboard() {
                 </CardContent>
               </Card>
 
-              <Card className="cursor-pointer hover:shadow-lg transition-all bg-white" onClick={() => navigate('/ia-creditos')}>
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-4">
-                    <div className="h-14 w-14 bg-purple-100 rounded-lg flex items-center justify-center">
-                      <CpuChipIcon className="h-7 w-7 text-purple-600" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900">Creditos de IA</h3>
-                      <p className="text-sm text-gray-500">Gerenciar uso da IA</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
 
               <Card className="bg-white opacity-60">
                 <CardContent className="pt-6">

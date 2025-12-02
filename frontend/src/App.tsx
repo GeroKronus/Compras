@@ -14,7 +14,6 @@ import MapaComparativo from '@/pages/MapaComparativo';
 import AnaliseOtimizada from '@/pages/AnaliseOtimizada';
 import Pedidos from '@/pages/Pedidos';
 import EmailsRevisao from '@/pages/EmailsRevisao';
-import IACreditos from '@/pages/IACreditos';
 
 // Criar cliente do React Query
 const queryClient = new QueryClient({
@@ -160,14 +159,6 @@ function App() {
             element={
               <ProtectedRoute>
                 <EmailsRevisao />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/ia-creditos"
-            element={
-              <ProtectedRoute>
-                <IACreditos />
               </ProtectedRoute>
             }
           />
