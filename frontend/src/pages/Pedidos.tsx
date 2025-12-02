@@ -174,8 +174,8 @@ export default function Pedidos() {
             <h1 className="text-2xl font-bold text-primary">Pedidos de Compra</h1>
             <p className="text-sm text-muted-foreground">{tenant?.nome_empresa}</p>
           </div>
-          <Button onClick={() => navigate('/dashboard')} variant="outline">
-            Voltar ao Dashboard
+          <Button onClick={() => navigate(-1)} variant="outline">
+            Voltar
           </Button>
         </div>
       </header>
@@ -365,12 +365,12 @@ export default function Pedidos() {
                                     <span className="font-medium">{item.produto_codigo}</span> - {item.produto_nome}
                                     {item.marca && <span className="text-xs text-gray-400 ml-1">({item.marca})</span>}
                                   </td>
-                                  <td className="px-3 py-2 text-right">{item.quantidade}</td>
+                                  <td className="px-3 py-2 text-right">{Number(item.quantidade).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</td>
                                   <td className="px-3 py-2 text-right">
-                                    {item.preco_unitario?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                    {Number(item.preco_unitario).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                   </td>
                                   <td className="px-3 py-2 text-right font-medium">
-                                    {item.valor_total?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                    {Number(item.valor_total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                   </td>
                                 </tr>
                               ))}
@@ -548,12 +548,12 @@ export default function Pedidos() {
                       <td className="px-3 py-2 text-sm">
                         <span className="font-medium">{item.produto_codigo}</span> - {item.produto_nome}
                       </td>
-                      <td className="px-3 py-2 text-sm text-right">{item.quantidade}</td>
+                      <td className="px-3 py-2 text-sm text-right">{Number(item.quantidade).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</td>
                       <td className="px-3 py-2 text-sm text-right">
-                        {item.preco_unitario?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        {Number(item.preco_unitario).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </td>
                       <td className="px-3 py-2 text-sm text-right font-medium">
-                        {item.valor_total?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        {Number(item.valor_total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </td>
                     </tr>
                   ))}

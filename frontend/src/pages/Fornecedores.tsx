@@ -102,8 +102,8 @@ export function Fornecedores() {
             <h1 className="text-2xl font-bold text-primary">Fornecedores</h1>
             <p className="text-sm text-muted-foreground">Gerenciamento de fornecedores</p>
           </div>
-          <Button onClick={() => navigate('/dashboard')} variant="outline">
-            Voltar ao Dashboard
+          <Button onClick={() => navigate(-1)} variant="outline">
+            Voltar
           </Button>
         </div>
       </header>
