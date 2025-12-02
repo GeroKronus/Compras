@@ -277,11 +277,12 @@ Responda APENAS com JSON valido:
 }}
 
 IMPORTANTE:
-- O array "itens" DEVE conter um objeto para CADA item com preco encontrado
-- Se encontrar "Item 1: R$ 5,00" e "Item 2: R$ 6,00", retorne 2 objetos no array
-- Se encontrar apenas um preco geral, coloque-o como item unico com indice 0
-- NUNCA retorne itens vazio se houver QUALQUER valor monetario
-- Seja AGRESSIVO na extracao - e melhor extrair algo errado do que perder dados
+- O array "itens" DEVE conter um objeto para CADA item da cotacao, mesmo sem preco
+- Se um item NAO tiver preco preenchido (campo vazio, em branco), retorne preco_unitario: null para esse item
+- NUNCA invente ou repita precos de outros itens para preencher campos vazios
+- Se encontrar "Item 1: R$ 5,00" e "Item 2: (vazio)", retorne item 1 com preco 5.0 e item 2 com preco null
+- Cada item deve ter seu indice correto (0, 1, 2...) mesmo que nao tenha preco
+- Um campo vazio/em branco NAO e um preco - nao tente adivinhar ou copiar de outro lugar
 """
 
         try:
@@ -289,7 +290,7 @@ IMPORTANTE:
                 model=self.MODEL,
                 max_tokens=1000,
                 messages=[{"role": "user", "content": prompt}],
-                system="Voce e um assistente AGRESSIVO na extracao de dados comerciais. Sua missao e encontrar precos, prazos e condicoes em qualquer formato. NUNCA diga que nao encontrou dados se houver qualquer indicacao de valores no texto."
+                system="Voce e um assistente PRECISO na extracao de dados comerciais. Extraia precos, prazos e condicoes encontrados no texto. Se um campo estiver vazio ou em branco, retorne null - NUNCA invente valores ou copie de outros itens. Cada item deve ter seu preco EXATO ou null se nao preenchido."
             )
 
             content = response.content[0].text
