@@ -82,7 +82,15 @@ export default function Dashboard() {
   const [showTesteEmail, setShowTesteEmail] = useState(false);
   const [emailTeste, setEmailTeste] = useState('');
   const [testeResult, setTesteResult] = useState<{ sucesso: boolean; mensagem: string } | null>(null);
-  const [alertasDismissed, setAlertasDismissed] = useState<string[]>([]);
+  // Carregar alertas dispensados do localStorage
+  const [alertasDismissed, setAlertasDismissed] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('alertas_dismissed');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
   // Query para buscar alertas do dashboard
   const { data: dashboardData, isLoading: loadingAlertas, refetch: refetchAlertas } = useQuery<AlertasResponse>({
@@ -96,7 +104,12 @@ export default function Dashboard() {
   const stats = dashboardData?.stats;
 
   const dismissAlerta = (alerta: Alerta) => {
-    setAlertasDismissed(prev => [...prev, alerta.tipo + alerta.titulo]);
+    const key = alerta.tipo + alerta.titulo;
+    setAlertasDismissed(prev => {
+      const updated = [...prev, key];
+      localStorage.setItem('alertas_dismissed', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const getPrioridadeColor = (prioridade: string) => {
