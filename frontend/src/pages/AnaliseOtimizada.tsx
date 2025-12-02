@@ -484,23 +484,27 @@ export default function AnaliseOtimizada() {
                     <p className="text-2xl font-bold">{calculoAtual.qtdFornecedores}</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
-                    <p className="text-xs text-gray-500 uppercase">Economia vs Menor Global</p>
+                    <p className="text-xs text-gray-500 uppercase">
+                      {calculoAtual.economia >= 0 ? 'Economia vs Menor Global' : 'Custo Adicional'}
+                    </p>
                     <p
                       className={`text-2xl font-bold ${
-                        calculoAtual.economia > 0 ? 'text-green-600' : 'text-gray-600'
+                        calculoAtual.economia > 0 ? 'text-green-600' : calculoAtual.economia < 0 ? 'text-red-600' : 'text-gray-600'
                       }`}
                     >
-                      {formatCurrency(calculoAtual.economia)}
+                      {calculoAtual.economia < 0 ? '+' : ''}{formatCurrency(Math.abs(calculoAtual.economia))}
                     </p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
-                    <p className="text-xs text-gray-500 uppercase">% Economia</p>
+                    <p className="text-xs text-gray-500 uppercase">
+                      {calculoAtual.economiaPercentual >= 0 ? '% Economia' : '% Acima do Menor'}
+                    </p>
                     <p
                       className={`text-2xl font-bold ${
-                        calculoAtual.economiaPercentual > 0 ? 'text-green-600' : 'text-gray-600'
+                        calculoAtual.economiaPercentual > 0 ? 'text-green-600' : calculoAtual.economiaPercentual < 0 ? 'text-red-600' : 'text-gray-600'
                       }`}
                     >
-                      {calculoAtual.economiaPercentual.toFixed(1)}%
+                      {calculoAtual.economiaPercentual < 0 ? '+' : ''}{Math.abs(calculoAtual.economiaPercentual).toFixed(1)}%
                     </p>
                   </div>
                 </div>
