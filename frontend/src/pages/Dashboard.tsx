@@ -10,7 +10,6 @@ import {
   EnvelopeIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
-  CpuChipIcon,
   BellAlertIcon,
   ArrowRightIcon,
   XMarkIcon,
