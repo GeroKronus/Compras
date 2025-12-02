@@ -9,6 +9,8 @@ import {
   XCircleIcon,
   EyeIcon,
   CurrencyDollarIcon,
+  ChartBarIcon,
+  ScaleIcon,
 } from '@heroicons/react/24/outline';
 
 interface ItemSolicitacao {
@@ -322,9 +324,23 @@ export default function Propostas() {
             <h1 className="text-2xl font-bold text-primary">Propostas de Fornecedores</h1>
             <p className="text-sm text-muted-foreground">{tenant?.nome_empresa}</p>
           </div>
-          <Button onClick={() => navigate('/dashboard')} variant="outline">
-            Voltar
-          </Button>
+          <div className="flex space-x-2">
+            {propostas.length >= 2 && (
+              <>
+                <Button onClick={() => navigate(`/cotacoes/${solicitacaoId}/mapa`)} variant="outline">
+                  <ChartBarIcon className="h-5 w-5 mr-2" />
+                  Mapa Comparativo
+                </Button>
+                <Button onClick={() => navigate(`/cotacoes/${solicitacaoId}/analise`)} variant="default">
+                  <ScaleIcon className="h-5 w-5 mr-2" />
+                  Analise Otimizada
+                </Button>
+              </>
+            )}
+            <Button onClick={() => navigate('/cotacoes')} variant="outline">
+              Voltar
+            </Button>
+          </div>
         </div>
       </header>
 
