@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     # Jobs
     ENABLE_SCHEDULED_JOBS: bool = True  # Habilitado por padrao em producao
 
+    # Telegram Bot (notificações de propostas recebidas)
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_CHAT_ID: str = ""
+    TELEGRAM_ENABLED: bool = True  # Pode desabilitar notificações
+
     @field_validator("BACKEND_CORS_ORIGINS", mode="after")
     @classmethod
     def parse_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:

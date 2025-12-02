@@ -13,6 +13,7 @@ from app.models.cotacao import SolicitacaoCotacao, PropostaFornecedor, StatusPro
 from app.models.fornecedor import Fornecedor
 from app.services.email_service import email_service
 from app.services.ai_service import ai_service
+from app.services.telegram_service import telegram_service
 
 
 class EmailClassifier:
@@ -157,6 +158,11 @@ class EmailClassifier:
                                 self._atualizar_proposta_com_dados(
                                     db, tenant_id, solicitacao_id, fornecedor_id, dados_extraidos,
                                     data_email=email_processado.data_recebimento
+                                )
+
+                                # NOTIFICAR VIA TELEGRAM
+                                self._notificar_proposta_recebida(
+                                    db, tenant_id, solicitacao_id, fornecedor_id, dados_extraidos
                                 )
 
                     else:
@@ -1277,6 +1283,85 @@ Responda APENAS com JSON no formato:
         db.commit()
 
         return proposta.id
+
+    def _notificar_proposta_recebida(
+        self,
+        db: Session,
+        tenant_id: int,
+        solicitacao_id: int,
+        fornecedor_id: int,
+        dados_extraidos: dict
+    ) -> None:
+        """
+        Envia notificação via Telegram quando uma proposta é recebida
+
+        Args:
+            db: Sessão do banco
+            tenant_id: ID do tenant
+            solicitacao_id: ID da solicitação
+            fornecedor_id: ID do fornecedor
+            dados_extraidos: Dados extraídos da proposta
+        """
+        try:
+            # Buscar informações da solicitação
+            solicitacao = db.query(SolicitacaoCotacao).filter(
+                SolicitacaoCotacao.id == solicitacao_id,
+                SolicitacaoCotacao.tenant_id == tenant_id
+            ).first()
+
+            if not solicitacao:
+                print(f"[TELEGRAM] Solicitação {solicitacao_id} não encontrada")
+                return
+
+            # Buscar informações do fornecedor
+            fornecedor = db.query(Fornecedor).filter(
+                Fornecedor.id == fornecedor_id,
+                Fornecedor.tenant_id == tenant_id
+            ).first()
+
+            if not fornecedor:
+                print(f"[TELEGRAM] Fornecedor {fornecedor_id} não encontrado")
+                return
+
+            # Contar propostas recebidas para esta SC
+            total_propostas = db.query(PropostaFornecedor).filter(
+                PropostaFornecedor.solicitacao_id == solicitacao_id,
+                PropostaFornecedor.status == StatusProposta.RECEBIDA
+            ).count()
+
+            # Contar total de fornecedores que receberam esta SC
+            total_fornecedores = db.query(PropostaFornecedor).filter(
+                PropostaFornecedor.solicitacao_id == solicitacao_id
+            ).count()
+
+            # Buscar proposta atualizada para pegar valor total
+            proposta = db.query(PropostaFornecedor).filter(
+                PropostaFornecedor.solicitacao_id == solicitacao_id,
+                PropostaFornecedor.fornecedor_id == fornecedor_id
+            ).first()
+
+            valor_total = None
+            prazo_entrega = None
+
+            if proposta:
+                valor_total = float(proposta.valor_total) if proposta.valor_total else None
+                prazo_entrega = proposta.prazo_entrega
+
+            # Enviar notificação
+            telegram_service.notificar_proposta_recebida(
+                numero_sc=solicitacao.numero,
+                fornecedor_nome=fornecedor.razao_social,
+                valor_total=valor_total,
+                prazo_entrega=prazo_entrega,
+                total_propostas=total_propostas,
+                total_fornecedores=total_fornecedores
+            )
+
+            print(f"[TELEGRAM] Notificação enviada: {solicitacao.numero} - {fornecedor.razao_social}")
+
+        except Exception as e:
+            # Não deixar erro de notificação quebrar o fluxo principal
+            print(f"[TELEGRAM] Erro ao enviar notificação: {e}")
 
 
 # Instancia global
