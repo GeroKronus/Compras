@@ -8,6 +8,7 @@ from typing import Optional, List, Tuple
 from datetime import datetime
 from email.header import decode_header
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from app.models.email_processado import EmailProcessado, StatusEmailProcessado, MetodoClassificacao
 from app.models.cotacao import SolicitacaoCotacao, PropostaFornecedor, StatusProposta
 from app.models.fornecedor import Fornecedor
@@ -1152,17 +1153,21 @@ Responda APENAS com JSON no formato:
                     )
                     db.add(item_proposta)
 
-            # Calcular valor total se nao foi fornecido
-            if not proposta.valor_total:
-                total = sum(
-                    (item.get('preco_unitario', 0) or 0) * (itens_solicitacao[item.get('indice', 0)].quantidade if item.get('indice', 0) < len(itens_solicitacao) else 1)
-                    for item in itens_extraidos
-                    if item.get('preco_unitario')
-                )
-                if total > 0:
-                    proposta.valor_total = total
+            # Calcular valor total diretamente dos itens salvos no banco
+            db.flush()  # Garantir que itens foram salvos
 
-            db.flush()
+            # Recalcular total da proposta baseado nos itens reais
+            total_calculado = db.query(
+                func.sum(ItemProposta.preco_unitario * ItemSolicitacao.quantidade)
+            ).join(
+                ItemSolicitacao, ItemProposta.item_solicitacao_id == ItemSolicitacao.id
+            ).filter(
+                ItemProposta.proposta_id == proposta.id
+            ).scalar()
+
+            if total_calculado and total_calculado > 0:
+                proposta.valor_total = float(total_calculado)
+                db.flush()
 
             print(f"[CLASSIFICADOR] Proposta {proposta.id} atualizada: "
                   f"valor={proposta.valor_total}, prazo={proposta.prazo_entrega}, "

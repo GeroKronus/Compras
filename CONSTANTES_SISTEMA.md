@@ -54,7 +54,8 @@ r'SOL-\d{4}-(\d+)'  # SOL-2024-0001 (formato legado, manter compatibilidade)
 | Ambiente | URL |
 |----------|-----|
 | Produção Railway | https://compras-production-2ccb.up.railway.app |
-| Banco PostgreSQL | shinkansen.proxy.rlwy.net:49885/railway |
+| Dashboard | https://compras-production-2ccb.up.railway.app/dashboard |
+| Banco PostgreSQL | postgresql://postgres:ONWumyNBfhJEpgxfPeAMrFuJgReLgbDG@shinkansen.proxy.rlwy.net:49885/railway |
 
 **NUNCA:** Usar URLs antigas ou inventadas (ex: `b28a` não existe).
 
