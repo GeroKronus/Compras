@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from typing import Optional
 from datetime import datetime
 from decimal import Decimal
@@ -157,7 +157,21 @@ def listar_pedidos(
     if fornecedor_id:
         query = query.filter(PedidoCompra.fornecedor_id == fornecedor_id)
     if busca:
-        query = query.filter(PedidoCompra.numero.ilike(f"%{busca}%"))
+        # Busca em múltiplos campos: número do pedido, número da cotação, nome do fornecedor
+        query = query.outerjoin(
+            SolicitacaoCotacao,
+            PedidoCompra.solicitacao_cotacao_id == SolicitacaoCotacao.id
+        ).outerjoin(
+            Fornecedor,
+            PedidoCompra.fornecedor_id == Fornecedor.id
+        ).filter(
+            or_(
+                PedidoCompra.numero.ilike(f"%{busca}%"),
+                SolicitacaoCotacao.numero.ilike(f"%{busca}%"),
+                Fornecedor.razao_social.ilike(f"%{busca}%"),
+                Fornecedor.nome_fantasia.ilike(f"%{busca}%")
+            )
+        )
 
     return paginate_response(
         query, page, page_size,
