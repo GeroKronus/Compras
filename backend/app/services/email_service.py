@@ -342,6 +342,8 @@ Referência: COTACAO-{solicitacao_id}
         itens_html = ""
         itens_texto = ""
 
+        print(f"[EMAIL] Gerando corpo para {fornecedor_nome} com {len(itens)} itens: {[i.get('produto_nome') for i in itens]}")
+
         for i, item in enumerate(itens, 1):
             especificacoes_html = f"<br><small style='color: #666;'>Obs: {item.get('especificacoes', '')}</small>" if item.get('especificacoes') else ""
             itens_html += f"""
