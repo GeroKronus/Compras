@@ -25,6 +25,28 @@ Nunca responda em inglês, mesmo após compactação de conversa.
 
 ---
 
+## 🔄 APÓS COMPACTAÇÃO DE CONVERSA
+
+**Quando a conversa for compactada (resumida), você PERDE o contexto completo.**
+
+**AÇÃO OBRIGATÓRIA:** Releia os markdowns do projeto para recuperar o contexto:
+
+1. **Leia este arquivo:** `.claude\CLAUDE.md` (instruções operacionais)
+2. **Leia:** `compras.md` (documentação técnica do sistema)
+3. **Leia:** `README.md` (visão geral do projeto)
+
+**POR QUÊ:**
+- A compactação preserva apenas um resumo da conversa
+- Detalhes técnicos, regras de negócio e configurações são perdidos
+- Sem reler, você pode "dar uma pirada" e cometer erros evitáveis
+
+**LEMBRE-SE TAMBÉM:**
+- **NUNCA** trabalhamos com banco local - sempre Railway (produção)
+- String de conexão está em `CONSTANTES_SISTEMA.md` se precisar consultar
+- Versão atual está em `Frontend/version.json` e `Backend/wwwroot/version.json`
+
+---
+
 ## Detecção Automática de Presença
 
 **MODO PADRÃO: REMOTO** (sempre envia notificações Telegram e monitora comandos)
