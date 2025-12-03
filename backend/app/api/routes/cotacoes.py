@@ -162,17 +162,22 @@ def enviar_solicitacao(
     tenant_id: int = Depends(get_current_tenant_id),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """Enviar solicitacao para fornecedores (cria propostas e envia emails)"""
+    """Enviar solicitacao para fornecedores (cria propostas e envia emails)
+
+    IMPORTANTE: Envia apenas os itens que cada fornecedor realmente fornece,
+    baseado no cadastro de produto_fornecedor.
+    """
     from app.services.email_service import email_service
 
     solicitacao = get_by_id(db, SolicitacaoCotacao, solicitacao_id, tenant_id, error_message="Solicitacao nao encontrada")
     require_status(solicitacao, [StatusSolicitacao.RASCUNHO, StatusSolicitacao.ENVIADA], "enviar")
 
-    # Preparar dados dos itens para o email
-    itens_email = []
+    # Preparar dados dos itens para o email (com produto_id para filtrar depois)
+    itens_solicitacao = []
     for item in solicitacao.itens:
         produto = db.query(Produto).filter(Produto.id == item.produto_id).first()
-        itens_email.append({
+        itens_solicitacao.append({
+            "produto_id": item.produto_id,
             "produto_nome": produto.nome if produto else f"Produto #{item.produto_id}",
             "quantidade": item.quantidade,
             "unidade_medida": item.unidade_medida or "UN",
@@ -187,9 +192,41 @@ def enviar_solicitacao(
     # Lista para rastrear emails enviados
     emails_enviados = []
     emails_falha = []
+    fornecedores_sem_itens = []
 
     for forn_id in request.fornecedores_ids:
         fornecedor = validate_fk(db, Fornecedor, forn_id, tenant_id, "Fornecedor")
+        forn_nome = fornecedor.razao_social or fornecedor.nome_fantasia or "Fornecedor"
+
+        # Buscar produtos que este fornecedor realmente fornece
+        produtos_fornecedor = db.execute(
+            produto_fornecedor.select().where(
+                produto_fornecedor.c.fornecedor_id == forn_id
+            )
+        ).fetchall()
+        produtos_ids_fornecedor = {p.produto_id for p in produtos_fornecedor}
+
+        # Filtrar itens da solicitacao para incluir apenas os que o fornecedor fornece
+        itens_para_fornecedor = [
+            {
+                "produto_nome": item["produto_nome"],
+                "quantidade": item["quantidade"],
+                "unidade_medida": item["unidade_medida"],
+                "especificacoes": item["especificacoes"]
+            }
+            for item in itens_solicitacao
+            if item["produto_id"] in produtos_ids_fornecedor
+        ]
+
+        # Se fornecedor nao fornece nenhum dos itens, registrar e pular
+        if not itens_para_fornecedor:
+            fornecedores_sem_itens.append(forn_nome)
+            print(f"[COTACAO] {forn_nome} nao fornece nenhum dos itens solicitados - pulando envio")
+            continue
+
+        # Log de itens filtrados
+        if len(itens_para_fornecedor) < len(itens_solicitacao):
+            print(f"[COTACAO] {forn_nome}: enviando {len(itens_para_fornecedor)}/{len(itens_solicitacao)} itens (filtrado por cadastro)")
 
         # Verificar se ja existe proposta
         proposta_existente = db.query(PropostaFornecedor).filter(
@@ -214,21 +251,22 @@ def enviar_solicitacao(
         if fornecedor.email_principal and email_service.is_configured:
             sucesso = email_service.enviar_solicitacao_cotacao_multiplos_itens(
                 fornecedor_email=fornecedor.email_principal,
-                fornecedor_nome=fornecedor.razao_social or fornecedor.nome_fantasia or "Fornecedor",
+                fornecedor_nome=forn_nome,
                 solicitacao_numero=solicitacao.numero,
                 solicitacao_titulo=solicitacao.titulo,
-                itens=itens_email,
+                itens=itens_para_fornecedor,  # Itens filtrados por fornecedor
                 observacoes=solicitacao.observacoes,
                 solicitacao_id=solicitacao.id,
                 data_limite=data_limite_str,
                 fornecedor_cnpj=fornecedor.cnpj
             )
             if sucesso:
-                emails_enviados.append(fornecedor.razao_social or fornecedor.nome_fantasia)
+                qtd_itens = len(itens_para_fornecedor)
+                emails_enviados.append(f"{forn_nome} ({qtd_itens} itens)")
             else:
-                emails_falha.append(fornecedor.razao_social or fornecedor.nome_fantasia)
+                emails_falha.append(forn_nome)
         elif not fornecedor.email_principal:
-            emails_falha.append(f"{fornecedor.razao_social or fornecedor.nome_fantasia} (sem email)")
+            emails_falha.append(f"{forn_nome} (sem email)")
 
     solicitacao.status = StatusSolicitacao.ENVIADA
     solicitacao.updated_by = current_user.id
@@ -239,6 +277,8 @@ def enviar_solicitacao(
     print(f"[COTACAO] Solicitacao {solicitacao.numero} enviada para {len(emails_enviados)} fornecedor(es)")
     if emails_falha:
         print(f"[COTACAO] Falhas no envio: {emails_falha}")
+    if fornecedores_sem_itens:
+        print(f"[COTACAO] Fornecedores ignorados (nao fornecem os itens): {fornecedores_sem_itens}")
 
     return _enrich_solicitacao_response(solicitacao, db)
 
