@@ -53,15 +53,16 @@ export function Fornecedores() {
     queryFn: async () => {
       console.log('[Fornecedores] Buscando categorias...');
       const response = await api.get('/categorias?page_size=100');
-      console.log('[Fornecedores] Categorias recebidas:', response.data);
+      console.log('[Fornecedores] Categorias recebidas - items:', response.data?.items?.length, 'total:', response.data?.total);
+      console.log('[Fornecedores] Primeira categoria:', response.data?.items?.[0]?.nome || 'NENHUMA');
       return response.data.items as Categoria[];
     },
     staleTime: 1000 * 60 * 5, // 5 minutos
   });
   const categorias = categoriasData || [];
 
-  // Debug: log do estado das categorias
-  console.log('[Fornecedores] Estado categorias:', { categorias, loadingCategorias, errorCategorias });
+  // Debug: log do estado das categorias (apenas quando muda)
+  console.log('[Fornecedores] Total categorias carregadas:', categorias.length);
 
   // Hook genérico CRUD - elimina 50 linhas de código duplicado
   const { items, isLoading, create, update, remove, invalidate } = useCrudResource<Fornecedor>({
