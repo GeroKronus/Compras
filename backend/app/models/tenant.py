@@ -50,5 +50,11 @@ class Tenant(Base, TimestampMixin):
     telegram_chat_id = Column(String(50), nullable=True)
     telegram_enabled = Column(Boolean, default=False, nullable=False)
 
+    # Configurações do Twilio/WhatsApp
+    twilio_account_sid = Column(String(100), nullable=True)
+    twilio_auth_token = Column(String(100), nullable=True)
+    twilio_whatsapp_from = Column(String(50), nullable=True)  # whatsapp:+5511999999999
+    whatsapp_enabled = Column(Boolean, default=False, nullable=False)
+
     def __repr__(self):
         return f"<Tenant {self.nome_empresa} (ID: {self.id})>"

@@ -59,6 +59,11 @@ class TenantUpdate(BaseModel):
     telegram_bot_token: Optional[str] = Field(None, max_length=100)
     telegram_chat_id: Optional[str] = Field(None, max_length=50)
     telegram_enabled: Optional[bool] = None
+    # Twilio/WhatsApp
+    twilio_account_sid: Optional[str] = Field(None, max_length=100)
+    twilio_auth_token: Optional[str] = Field(None, max_length=100)
+    twilio_whatsapp_from: Optional[str] = Field(None, max_length=50)
+    whatsapp_enabled: Optional[bool] = None
 
 
 class TenantResponse(TenantBase):
@@ -75,6 +80,9 @@ class TenantResponse(TenantBase):
     # Telegram (token oculto por segurança)
     telegram_enabled: bool = False
     telegram_chat_id: Optional[str] = None
+    # WhatsApp (credenciais ocultas por segurança)
+    whatsapp_enabled: bool = False
+    twilio_whatsapp_from: Optional[str] = None  # Apenas o número é visível
     created_at: datetime
     updated_at: datetime
 

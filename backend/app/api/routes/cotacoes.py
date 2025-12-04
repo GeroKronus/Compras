@@ -174,8 +174,12 @@ def enviar_solicitacao(
     """
     from app.services.email_service import email_service
     from app.services.twilio_whatsapp_service import twilio_whatsapp_service as whatsapp_service
+    from app.models.tenant import Tenant
 
     solicitacao = get_by_id(db, SolicitacaoCotacao, solicitacao_id, tenant_id, error_message="Solicitacao nao encontrada")
+
+    # Buscar tenant para configurações de WhatsApp
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     require_status(solicitacao, [StatusSolicitacao.RASCUNHO, StatusSolicitacao.ENVIADA], "enviar")
 
     # Preparar dados dos itens para o email (com produto_id para filtrar depois)
@@ -314,9 +318,10 @@ def enviar_solicitacao(
         elif not fornecedor.email_principal:
             emails_falha.append(f"{forn_nome} (sem email)")
 
-        # Enviar WhatsApp se solicitado e disponível
-        if request.enviar_whatsapp and fornecedor.whatsapp and whatsapp_service.is_available:
+        # Enviar WhatsApp se solicitado e configurado no tenant
+        if request.enviar_whatsapp and fornecedor.whatsapp and whatsapp_service.is_configured(tenant):
             resultado_whatsapp = whatsapp_service.enviar_solicitacao_cotacao(
+                tenant=tenant,
                 numero=fornecedor.whatsapp,
                 fornecedor_nome=forn_nome,
                 solicitacao_numero=solicitacao.numero,

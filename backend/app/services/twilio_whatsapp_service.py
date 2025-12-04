@@ -1,47 +1,35 @@
 """
-Serviço de envio de mensagens via WhatsApp usando Twilio API
+Serviço de envio de mensagens via WhatsApp usando Twilio API (Multi-Tenant)
 
-Vantagens sobre pywhatkit:
-- Funciona em servidor (nuvem)
-- Não precisa de navegador
-- Suporta envio de PDFs
-- Profissional e confiável
+Cada tenant configura suas próprias credenciais Twilio.
 """
-from typing import Optional, List
+from typing import Optional
 from app.config import settings
 
 
 class TwilioWhatsAppService:
-    """Serviço para envio de mensagens via WhatsApp usando Twilio"""
+    """Serviço para envio de mensagens via WhatsApp usando Twilio (Multi-Tenant)"""
 
     def __init__(self):
-        self._client = None
-        self._is_available = False
-        self._check_availability()
+        self._twilio_available = False
+        self._check_twilio_installed()
 
-    def _check_availability(self):
-        """Verifica se Twilio está configurado"""
-        if not settings.TWILIO_ACCOUNT_SID or not settings.TWILIO_AUTH_TOKEN:
-            print("[TWILIO] Credenciais não configuradas. Configure TWILIO_ACCOUNT_SID e TWILIO_AUTH_TOKEN no .env")
-            self._is_available = False
-            return
-
+    def _check_twilio_installed(self):
+        """Verifica se a biblioteca Twilio está instalada"""
         try:
             from twilio.rest import Client
-            self._client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-            self._is_available = True
-            print("[TWILIO] Serviço WhatsApp disponível")
+            self._twilio_available = True
+            print("[TWILIO] Biblioteca disponível")
         except ImportError:
             print("[TWILIO] Biblioteca twilio não instalada. Execute: pip install twilio")
-            self._is_available = False
-        except Exception as e:
-            print(f"[TWILIO] Erro ao inicializar: {e}")
-            self._is_available = False
+            self._twilio_available = False
 
-    @property
-    def is_available(self) -> bool:
-        """Retorna True se o serviço está disponível"""
-        return self._is_available
+    def _get_client(self, account_sid: str, auth_token: str):
+        """Cria um cliente Twilio com as credenciais fornecidas"""
+        if not self._twilio_available:
+            return None
+        from twilio.rest import Client
+        return Client(account_sid, auth_token)
 
     def _formatar_numero(self, numero: str) -> str:
         """
@@ -61,8 +49,22 @@ class TwilioWhatsAppService:
 
         return f"whatsapp:{numero_limpo}"
 
+    def is_configured(self, tenant) -> bool:
+        """Verifica se o tenant tem WhatsApp configurado"""
+        if not self._twilio_available:
+            return False
+        if not tenant:
+            return False
+        return (
+            tenant.whatsapp_enabled and
+            tenant.twilio_account_sid and
+            tenant.twilio_auth_token and
+            tenant.twilio_whatsapp_from
+        )
+
     def enviar_mensagem(
         self,
+        tenant,
         numero: str,
         mensagem: str,
         media_url: Optional[str] = None
@@ -71,6 +73,7 @@ class TwilioWhatsAppService:
         Envia mensagem de texto via WhatsApp
 
         Args:
+            tenant: Objeto Tenant com credenciais Twilio
             numero: Número do WhatsApp (ex: 11999999999)
             mensagem: Texto da mensagem
             media_url: URL pública do arquivo para anexar (opcional)
@@ -78,27 +81,29 @@ class TwilioWhatsAppService:
         Returns:
             dict com status do envio
         """
-        if not self._is_available:
+        if not self._twilio_available:
             return {
                 "sucesso": False,
-                "erro": "Twilio não configurado. Verifique as credenciais no .env",
+                "erro": "Biblioteca Twilio não instalada",
                 "numero": numero
             }
 
-        if not settings.TWILIO_WHATSAPP_FROM:
+        if not self.is_configured(tenant):
             return {
                 "sucesso": False,
-                "erro": "TWILIO_WHATSAPP_FROM não configurado no .env",
+                "erro": "WhatsApp não configurado para esta empresa. Configure nas configurações do tenant.",
                 "numero": numero
             }
 
         try:
+            client = self._get_client(tenant.twilio_account_sid, tenant.twilio_auth_token)
             numero_formatado = self._formatar_numero(numero)
-            print(f"[TWILIO] Enviando mensagem para {numero_formatado}...")
+
+            print(f"[TWILIO] Enviando mensagem para {numero_formatado} (Tenant: {tenant.nome_empresa})...")
 
             # Parâmetros da mensagem
             message_params = {
-                "from_": settings.TWILIO_WHATSAPP_FROM,
+                "from_": tenant.twilio_whatsapp_from,
                 "to": numero_formatado,
                 "body": mensagem
             }
@@ -109,7 +114,7 @@ class TwilioWhatsAppService:
                 print(f"[TWILIO] Anexando mídia: {media_url}")
 
             # Enviar mensagem
-            message = self._client.messages.create(**message_params)
+            message = client.messages.create(**message_params)
 
             print(f"[TWILIO] Mensagem enviada! SID: {message.sid}")
             return {
@@ -129,6 +134,7 @@ class TwilioWhatsAppService:
 
     def enviar_mensagem_com_pdf(
         self,
+        tenant,
         numero: str,
         mensagem: str,
         pdf_url: str
@@ -137,6 +143,7 @@ class TwilioWhatsAppService:
         Envia mensagem com PDF anexo via WhatsApp
 
         Args:
+            tenant: Objeto Tenant com credenciais Twilio
             numero: Número do WhatsApp
             mensagem: Texto da mensagem
             pdf_url: URL pública do PDF
@@ -144,10 +151,11 @@ class TwilioWhatsAppService:
         Returns:
             dict com status do envio
         """
-        return self.enviar_mensagem(numero, mensagem, media_url=pdf_url)
+        return self.enviar_mensagem(tenant, numero, mensagem, media_url=pdf_url)
 
     def enviar_solicitacao_cotacao(
         self,
+        tenant,
         numero: str,
         fornecedor_nome: str,
         solicitacao_numero: str,
@@ -160,6 +168,7 @@ class TwilioWhatsAppService:
         Envia solicitação de cotação formatada via WhatsApp com PDF anexo
 
         Args:
+            tenant: Objeto Tenant com credenciais Twilio
             numero: WhatsApp do fornecedor
             fornecedor_nome: Nome do fornecedor
             solicitacao_numero: Número da SC (ex: SC-2025-00007)
@@ -195,7 +204,7 @@ class TwilioWhatsAppService:
             pdf_url = f"{settings.API_BASE_URL}/api/v1/cotacoes/solicitacoes/{solicitacao_id}/pdf/{fornecedor_id}"
             mensagem += f"\n\n📎 PDF da cotação anexado."
 
-        return self.enviar_mensagem(numero, mensagem, media_url=pdf_url)
+        return self.enviar_mensagem(tenant, numero, mensagem, media_url=pdf_url)
 
 
 # Instância singleton
