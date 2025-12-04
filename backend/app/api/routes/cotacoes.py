@@ -34,6 +34,7 @@ from app.api.utils import (
 )
 from app.api.utils.sequencers import Prefixes
 from app.models.produto_fornecedor import produto_fornecedor
+from app.models.categoria_fornecedor import categoria_fornecedor
 from app.services.fornecedor_ranking_service import fornecedor_ranking_service
 
 router = APIRouter()
@@ -198,35 +199,73 @@ def enviar_solicitacao(
         fornecedor = validate_fk(db, Fornecedor, forn_id, tenant_id, "Fornecedor")
         forn_nome = fornecedor.razao_social or fornecedor.nome_fantasia or "Fornecedor"
 
-        # Buscar produtos que este fornecedor realmente fornece
-        produtos_fornecedor = db.execute(
+        # === FILTRO EM DOIS NÍVEIS ===
+        # 1. Primeiro: tentar filtrar por vínculo produto-fornecedor (filtro fino)
+        # 2. Fallback: se não houver vínculo por produto, usar categoria-fornecedor
+
+        # Buscar produtos que este fornecedor fornece diretamente
+        produtos_fornecedor_result = db.execute(
             produto_fornecedor.select().where(
                 produto_fornecedor.c.fornecedor_id == forn_id
             )
         ).fetchall()
-        produtos_ids_fornecedor = {p.produto_id for p in produtos_fornecedor}
+        produtos_ids_fornecedor = {p.produto_id for p in produtos_fornecedor_result}
 
-        # Filtrar itens da solicitacao para incluir apenas os que o fornecedor fornece
-        itens_para_fornecedor = [
-            {
-                "produto_nome": item["produto_nome"],
-                "quantidade": item["quantidade"],
-                "unidade_medida": item["unidade_medida"],
-                "especificacoes": item["especificacoes"]
-            }
-            for item in itens_solicitacao
-            if item["produto_id"] in produtos_ids_fornecedor
-        ]
+        # Verificar se o fornecedor tem vínculos de produtos
+        if produtos_ids_fornecedor:
+            # FILTRO FINO: Fornecedor tem produtos cadastrados
+            # Enviar apenas os itens que ele fornece diretamente
+            itens_para_fornecedor = [
+                {
+                    "produto_nome": item["produto_nome"],
+                    "quantidade": item["quantidade"],
+                    "unidade_medida": item["unidade_medida"],
+                    "especificacoes": item["especificacoes"]
+                }
+                for item in itens_solicitacao
+                if item["produto_id"] in produtos_ids_fornecedor
+            ]
+            filtro_usado = "produto"
+        else:
+            # FALLBACK: Fornecedor não tem produtos cadastrados
+            # Verificar se ele atende às categorias dos produtos da SC
+            categorias_fornecedor_result = db.execute(
+                categoria_fornecedor.select().where(
+                    categoria_fornecedor.c.fornecedor_id == forn_id,
+                    categoria_fornecedor.c.tenant_id == tenant_id
+                )
+            ).fetchall()
+            categorias_ids_fornecedor = {c.categoria_id for c in categorias_fornecedor_result}
+
+            if categorias_ids_fornecedor:
+                # Buscar categoria de cada produto e verificar se fornecedor atende
+                itens_para_fornecedor = []
+                for item in itens_solicitacao:
+                    produto = db.query(Produto).filter(Produto.id == item["produto_id"]).first()
+                    if produto and produto.categoria_id in categorias_ids_fornecedor:
+                        itens_para_fornecedor.append({
+                            "produto_nome": item["produto_nome"],
+                            "quantidade": item["quantidade"],
+                            "unidade_medida": item["unidade_medida"],
+                            "especificacoes": item["especificacoes"]
+                        })
+                filtro_usado = "categoria"
+            else:
+                # Fornecedor não tem vínculo por produto nem por categoria
+                itens_para_fornecedor = []
+                filtro_usado = "nenhum"
 
         # Se fornecedor nao fornece nenhum dos itens, registrar e pular
         if not itens_para_fornecedor:
             fornecedores_sem_itens.append(forn_nome)
-            print(f"[COTACAO] {forn_nome} nao fornece nenhum dos itens solicitados - pulando envio")
+            print(f"[COTACAO] {forn_nome} nao fornece nenhum dos itens solicitados (sem vinculo por produto ou categoria) - pulando envio")
             continue
 
         # Log de itens filtrados
         if len(itens_para_fornecedor) < len(itens_solicitacao):
-            print(f"[COTACAO] {forn_nome}: enviando {len(itens_para_fornecedor)}/{len(itens_solicitacao)} itens (filtrado por cadastro)")
+            print(f"[COTACAO] {forn_nome}: enviando {len(itens_para_fornecedor)}/{len(itens_solicitacao)} itens (filtro por {filtro_usado})")
+        else:
+            print(f"[COTACAO] {forn_nome}: enviando todos os {len(itens_para_fornecedor)} itens (filtro por {filtro_usado})")
 
         # Verificar se ja existe proposta
         proposta_existente = db.query(PropostaFornecedor).filter(
