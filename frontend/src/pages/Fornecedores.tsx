@@ -51,24 +51,25 @@ export function Fornecedores() {
   const { data: categoriasData, isLoading: loadingCategorias, error: errorCategorias } = useQuery({
     queryKey: ['categorias-fornecedores'],
     queryFn: async () => {
-      try {
-        console.log('[Fornecedores] Buscando categorias...');
-        const response = await api.get('/categorias?page_size=100');
-        console.log('[Fornecedores] Categorias recebidas - items:', response.data?.items?.length, 'total:', response.data?.total);
-        return response.data.items as Categoria[];
-      } catch (err: any) {
-        console.error('[Fornecedores] ERRO ao buscar categorias:', err?.response?.status, err?.response?.data || err?.message);
-        throw err;
+      console.log('[Fornecedores] Buscando categorias...');
+      const response = await api.get('/categorias?page_size=100');
+      console.log('[Fornecedores] Resposta completa:', JSON.stringify(response.data));
+
+      // Verificar estrutura da resposta
+      const items = response.data?.items || response.data || [];
+      console.log('[Fornecedores] Items extraídos:', items.length);
+
+      if (!Array.isArray(items)) {
+        console.error('[Fornecedores] Resposta não é array:', typeof items);
+        return [];
       }
+
+      return items as Categoria[];
     },
     staleTime: 1000 * 60 * 5,
     retry: 1,
   });
   const categorias = categoriasData || [];
-
-  if (errorCategorias) {
-    console.error('[Fornecedores] Erro no estado:', errorCategorias);
-  }
 
   // Hook genérico CRUD - elimina 50 linhas de código duplicado
   const { items, isLoading, create, update, remove, invalidate } = useCrudResource<Fornecedor>({
