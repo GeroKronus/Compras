@@ -52,7 +52,7 @@ export function Fornecedores() {
     queryKey: ['categorias-fornecedores'],
     queryFn: async () => {
       console.log('[Fornecedores] Buscando categorias...');
-      const response = await api.get('/categorias?page_size=100');
+      const response = await api.get('/categorias/?page_size=100');
       console.log('[Fornecedores] Resposta completa:', JSON.stringify(response.data));
 
       // Verificar estrutura da resposta
