@@ -23,6 +23,7 @@ interface Fornecedor {
   cnpj: string;
   email_principal: string | null;
   telefone_principal: string | null;
+  whatsapp: string | null;
   endereco_logradouro: string | null;
   endereco_cidade: string | null;
   endereco_estado: string | null;
@@ -93,6 +94,7 @@ export function Fornecedores() {
       cnpj: formData.get('cnpj') as string,
       email_principal: formData.get('email_principal') as string || null,
       telefone_principal: formData.get('telefone_principal') as string || null,
+      whatsapp: formData.get('whatsapp') as string || null,
       endereco_logradouro: formData.get('endereco_logradouro') as string || null,
       endereco_cidade: formData.get('endereco_cidade') as string || null,
       endereco_estado: formData.get('endereco_estado') as string || null,
@@ -199,6 +201,15 @@ export function Fornecedores() {
                     placeholder="(11) 99999-9999"
                     defaultValue={editando?.telefone_principal || ''}
                   />
+                  <FormInput
+                    name="whatsapp"
+                    label="WhatsApp"
+                    placeholder="11999999999 (apenas números)"
+                    defaultValue={editando?.whatsapp || ''}
+                  />
+                </FormRow>
+
+                <FormRow>
                   <FormInput
                     name="endereco_cep"
                     label="CEP"
@@ -330,6 +341,12 @@ export function Fornecedores() {
                         <div>
                           <span className="text-gray-500">Telefone:</span>
                           <span className="ml-1 font-medium">{fornecedor.telefone_principal}</span>
+                        </div>
+                      )}
+                      {fornecedor.whatsapp && (
+                        <div>
+                          <span className="text-gray-500">WhatsApp:</span>
+                          <span className="ml-1 font-medium text-green-600">{fornecedor.whatsapp}</span>
                         </div>
                       )}
                       {Number(fornecedor.rating) > 0 && (

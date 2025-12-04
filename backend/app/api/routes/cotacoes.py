@@ -166,9 +166,12 @@ def enviar_solicitacao(
     """Enviar solicitacao para fornecedores (cria propostas e envia emails)
 
     IMPORTANTE: Envia apenas os itens que cada fornecedor realmente fornece,
-    baseado no cadastro de produto_fornecedor.
+    baseado no cadastro de produto_fornecedor ou categoria_fornecedor.
+
+    Se enviar_whatsapp=True, também envia mensagem via WhatsApp Web.
     """
     from app.services.email_service import email_service
+    from app.services.whatsapp_service import whatsapp_service
 
     solicitacao = get_by_id(db, SolicitacaoCotacao, solicitacao_id, tenant_id, error_message="Solicitacao nao encontrada")
     require_status(solicitacao, [StatusSolicitacao.RASCUNHO, StatusSolicitacao.ENVIADA], "enviar")
@@ -194,6 +197,8 @@ def enviar_solicitacao(
     emails_enviados = []
     emails_falha = []
     fornecedores_sem_itens = []
+    whatsapp_enviados = []
+    whatsapp_falha = []
 
     for forn_id in request.fornecedores_ids:
         fornecedor = validate_fk(db, Fornecedor, forn_id, tenant_id, "Fornecedor")
@@ -307,17 +312,35 @@ def enviar_solicitacao(
         elif not fornecedor.email_principal:
             emails_falha.append(f"{forn_nome} (sem email)")
 
+        # Enviar WhatsApp se solicitado e disponível
+        if request.enviar_whatsapp and fornecedor.whatsapp and whatsapp_service.is_available:
+            resultado_whatsapp = whatsapp_service.enviar_solicitacao_cotacao(
+                numero=fornecedor.whatsapp,
+                fornecedor_nome=forn_nome,
+                solicitacao_numero=solicitacao.numero,
+                itens=itens_para_fornecedor,
+                data_limite=data_limite_str
+            )
+            if resultado_whatsapp.get("sucesso"):
+                whatsapp_enviados.append(forn_nome)
+            else:
+                whatsapp_falha.append(f"{forn_nome}: {resultado_whatsapp.get('erro', 'erro desconhecido')}")
+
     solicitacao.status = StatusSolicitacao.ENVIADA
     solicitacao.updated_by = current_user.id
     db.commit()
     db.refresh(solicitacao)
 
     # Log dos emails enviados
-    print(f"[COTACAO] Solicitacao {solicitacao.numero} enviada para {len(emails_enviados)} fornecedor(es)")
+    print(f"[COTACAO] Solicitacao {solicitacao.numero} enviada para {len(emails_enviados)} fornecedor(es) por email")
     if emails_falha:
-        print(f"[COTACAO] Falhas no envio: {emails_falha}")
+        print(f"[COTACAO] Falhas no envio de email: {emails_falha}")
     if fornecedores_sem_itens:
         print(f"[COTACAO] Fornecedores ignorados (nao fornecem os itens): {fornecedores_sem_itens}")
+    if whatsapp_enviados:
+        print(f"[COTACAO] WhatsApp enviado para {len(whatsapp_enviados)} fornecedor(es): {whatsapp_enviados}")
+    if whatsapp_falha:
+        print(f"[COTACAO] Falhas no envio de WhatsApp: {whatsapp_falha}")
 
     return _enrich_solicitacao_response(solicitacao, db)
 

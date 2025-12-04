@@ -33,6 +33,7 @@ class FornecedorBase(BaseModel):
     contatos: Optional[List[ContatoFornecedor]] = Field(None, description="Lista de contatos")
     telefone_principal: Optional[str] = Field(None, max_length=20)
     email_principal: Optional[EmailStr] = None
+    whatsapp: Optional[str] = Field(None, max_length=20, description="WhatsApp com DDD (apenas números)")
     website: Optional[str] = Field(None, max_length=200)
 
     # Condições comerciais
@@ -95,6 +96,7 @@ class FornecedorUpdate(BaseModel):
     contatos: Optional[List[ContatoFornecedor]] = None
     telefone_principal: Optional[str] = Field(None, max_length=20)
     email_principal: Optional[EmailStr] = None
+    whatsapp: Optional[str] = Field(None, max_length=20)
     website: Optional[str] = Field(None, max_length=200)
     prazo_entrega_medio: Optional[int] = Field(None, ge=0)
     condicoes_pagamento: Optional[str] = None

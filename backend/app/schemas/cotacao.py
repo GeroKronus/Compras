@@ -206,6 +206,7 @@ class PropostaFornecedorListResponse(BaseModel):
 
 class EnviarSolicitacaoRequest(BaseModel):
     fornecedores_ids: List[int] = Field(..., min_length=1)
+    enviar_whatsapp: bool = Field(False, description="Se True, também envia por WhatsApp")
 
 
 class RegistrarPropostaRequest(PropostaFornecedorBase):

@@ -42,6 +42,7 @@ class Fornecedor(Base, TenantMixin, TimestampMixin, AuditMixin):
     # Telefone e email principal (para queries rápidas)
     telefone_principal = Column(String(20), nullable=True)
     email_principal = Column(String(200), nullable=True)
+    whatsapp = Column(String(20), nullable=True)  # Número WhatsApp com DDD (ex: 11999999999)
     website = Column(String(200), nullable=True)
 
     # Condições comerciais
