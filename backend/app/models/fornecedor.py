@@ -62,11 +62,14 @@ class Fornecedor(Base, TenantMixin, TimestampMixin, AuditMixin):
     # Observações
     observacoes = Column(Text, nullable=True)
 
-    # Categorias de produtos que fornece (JSON) - DEPRECATED, usar relacionamento produtos
+    # Categorias de produtos que fornece (JSON) - DEPRECATED, usar relacionamento categorias
     categorias_produtos = Column(JSON, nullable=True)
 
     # Relacionamento com produtos que este fornecedor oferece
     produtos = relationship("Produto", secondary="produto_fornecedor", back_populates="fornecedores")
+
+    # Relacionamento com categorias que este fornecedor atende
+    categorias = relationship("Categoria", secondary="categoria_fornecedor", back_populates="fornecedores")
 
     def __repr__(self):
         return f"<Fornecedor {self.razao_social} - CNPJ: {self.cnpj}>"

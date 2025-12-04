@@ -31,6 +31,7 @@ from app.models.email_processado import (
 )
 from app.models.auditoria_escolha import AuditoriaEscolhaFornecedor
 from app.models.sequencia import Sequencia
+from app.models.categoria_fornecedor import categoria_fornecedor
 
 __all__ = [
     "Base",
@@ -53,4 +54,5 @@ __all__ = [
     "ItemPedido",
     "StatusPedido",
     "AuditoriaEscolhaFornecedor",
+    "categoria_fornecedor",
 ]

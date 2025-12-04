@@ -2,14 +2,19 @@
  * Fornecedores - Página refatorada usando useCrudResource e FormField
  * Redução de ~100 linhas de código duplicado
  */
-import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useCrudResource } from '../hooks/useCrudResource';
 import { api } from '../services/api';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { FormInput, FormSelect, FormRow, FormActions } from '../components/ui/form-field';
 import { useNavigate } from 'react-router-dom';
+
+interface Categoria {
+  id: number;
+  nome: string;
+}
 
 interface Fornecedor {
   id: number;
@@ -24,6 +29,7 @@ interface Fornecedor {
   endereco_cep: string | null;
   contatos: any;
   categorias_produtos: string[];
+  categorias: Categoria[];
   condicoes_pagamento: string | null;
   rating: number | string;
   total_compras: number;
@@ -37,15 +43,35 @@ interface Fornecedor {
 export function Fornecedores() {
   const [showForm, setShowForm] = useState(false);
   const [editando, setEditando] = useState<Fornecedor | null>(null);
+  const [categoriasSelecionadas, setCategoriasSelecionadas] = useState<number[]>([]);
   const navigate = useNavigate();
+
+  // Buscar categorias disponíveis
+  const { data: categoriasData } = useQuery({
+    queryKey: ['categorias'],
+    queryFn: async () => {
+      const response = await api.get('/categorias?page_size=100');
+      return response.data.items as Categoria[];
+    }
+  });
+  const categorias = categoriasData || [];
 
   // Hook genérico CRUD - elimina 50 linhas de código duplicado
   const { items, isLoading, create, update, remove, invalidate } = useCrudResource<Fornecedor>({
     endpoint: '/fornecedores',
     queryKey: 'fornecedores',
-    onCreateSuccess: () => setShowForm(false),
-    onUpdateSuccess: () => { setShowForm(false); setEditando(null); },
+    onCreateSuccess: () => { setShowForm(false); setCategoriasSelecionadas([]); },
+    onUpdateSuccess: () => { setShowForm(false); setEditando(null); setCategoriasSelecionadas([]); },
   });
+
+  // Sincronizar categorias quando editando
+  useEffect(() => {
+    if (editando?.categorias) {
+      setCategoriasSelecionadas(editando.categorias.map(c => c.id));
+    } else {
+      setCategoriasSelecionadas([]);
+    }
+  }, [editando]);
 
   // Operações específicas (não cobertas pelo CRUD genérico)
   const aprovarMutation = useMutation({
@@ -73,6 +99,7 @@ export function Fornecedores() {
       endereco_cep: formData.get('endereco_cep') as string || null,
       condicoes_pagamento: formData.get('condicoes_pagamento') as string || null,
       ativo: formData.get('ativo') === 'true',
+      categorias_ids: categoriasSelecionadas,
     };
 
     if (editando) {
@@ -80,6 +107,14 @@ export function Fornecedores() {
     } else {
       create.mutate(dados);
     }
+  };
+
+  const toggleCategoria = (categoriaId: number) => {
+    setCategoriasSelecionadas(prev =>
+      prev.includes(categoriaId)
+        ? prev.filter(id => id !== categoriaId)
+        : [...prev, categoriaId]
+    );
   };
 
   const handleDelete = (id: number) => {
@@ -212,6 +247,35 @@ export function Fornecedores() {
                   ]}
                 />
 
+                {/* Multi-select de Categorias */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Categorias que Atende</label>
+                  <div className="border rounded-md p-3 max-h-48 overflow-y-auto">
+                    {categorias.length === 0 ? (
+                      <p className="text-sm text-gray-500">Nenhuma categoria cadastrada</p>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2">
+                        {categorias.map((cat) => (
+                          <label key={cat.id} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
+                            <input
+                              type="checkbox"
+                              checked={categoriasSelecionadas.includes(cat.id)}
+                              onChange={() => toggleCategoria(cat.id)}
+                              className="rounded border-gray-300"
+                            />
+                            <span className="text-sm">{cat.nome}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {categoriasSelecionadas.length > 0 && (
+                    <p className="text-xs text-gray-500">
+                      {categoriasSelecionadas.length} categoria(s) selecionada(s)
+                    </p>
+                  )}
+                </div>
+
                 <FormActions>
                   <Button type="submit" disabled={create.isPending || update.isPending}>
                     {create.isPending || update.isPending ? 'Salvando...' : 'Salvar'}
@@ -289,6 +353,19 @@ export function Fornecedores() {
                       <div className="text-sm">
                         <span className="text-gray-500">Condicoes:</span>
                         <span className="ml-1">{fornecedor.condicoes_pagamento}</span>
+                      </div>
+                    )}
+
+                    {fornecedor.categorias && fornecedor.categorias.length > 0 && (
+                      <div className="text-sm mt-2">
+                        <span className="text-gray-500">Categorias:</span>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {fornecedor.categorias.map((cat) => (
+                            <span key={cat.id} className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
+                              {cat.nome}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>

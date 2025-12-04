@@ -206,12 +206,15 @@ export default function Cotacoes() {
   });
 
   // Função para buscar fornecedores de todos os produtos dos itens
+  // Busca por: 1) vínculo direto produto-fornecedor, 2) categoria dos produtos
   const buscarFornecedoresProdutos = async (itensLista: ItemSolicitacao[]) => {
     setCarregandoFornecedoresProdutos(true);
     try {
       const produtosIds = [...new Set(itensLista.map(item => item.produto_id).filter(id => id > 0))];
       const fornecedoresSet = new Set<number>();
+      const categoriasSet = new Set<number>();
 
+      // 1. Buscar fornecedores por vínculo direto produto-fornecedor
       for (const produtoId of produtosIds) {
         try {
           const response = await api.get(`/produtos/${produtoId}/fornecedores`);
@@ -219,6 +222,28 @@ export default function Cotacoes() {
           fornecedoresDoProduto.forEach((f: any) => fornecedoresSet.add(f.id));
         } catch (e) {
           // Ignora erros de produtos sem fornecedores
+        }
+
+        // Buscar categoria do produto
+        try {
+          const prodResponse = await api.get(`/produtos/${produtoId}`);
+          if (prodResponse.data?.categoria_id) {
+            categoriasSet.add(prodResponse.data.categoria_id);
+          }
+        } catch (e) {
+          // Ignora erros
+        }
+      }
+
+      // 2. Buscar fornecedores por categoria
+      if (categoriasSet.size > 0) {
+        try {
+          const categoriasIds = Array.from(categoriasSet).join(',');
+          const response = await api.get(`/fornecedores/por-categorias?categorias_ids=${categoriasIds}`);
+          const fornecedoresCategorias = response.data?.fornecedores || [];
+          fornecedoresCategorias.forEach((f: any) => fornecedoresSet.add(f.id));
+        } catch (e) {
+          console.error('Erro ao buscar fornecedores por categorias:', e);
         }
       }
 
@@ -636,10 +661,10 @@ export default function Cotacoes() {
                   </p>
                   <p className="text-sm text-gray-500">
                     {carregandoFornecedoresProdutos
-                      ? 'Buscando fornecedores...'
+                      ? 'Buscando fornecedores por produto e categoria...'
                       : fornecedoresProdutos.length > 0
-                        ? `${fornecedoresProdutos.length} fornecedor(es) cadastrado(s) para os produtos desta solicitacao`
-                        : 'Nenhum fornecedor cadastrado para os produtos desta solicitacao'}
+                        ? `${fornecedoresProdutos.length} fornecedor(es) encontrado(s) (por produto ou categoria)`
+                        : 'Nenhum fornecedor encontrado para os produtos ou categorias desta solicitacao'}
                   </p>
                 </div>
                 <input

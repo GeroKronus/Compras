@@ -76,7 +76,7 @@ class FornecedorBase(BaseModel):
 
 class FornecedorCreate(FornecedorBase):
     """Schema para criação de fornecedor"""
-    pass
+    categorias_ids: Optional[List[int]] = Field(None, description="IDs das categorias que o fornecedor atende")
 
 
 class FornecedorUpdate(BaseModel):
@@ -104,6 +104,16 @@ class FornecedorUpdate(BaseModel):
     aprovado: Optional[bool] = None
     observacoes: Optional[str] = None
     categorias_produtos: Optional[List[str]] = None
+    categorias_ids: Optional[List[int]] = Field(None, description="IDs das categorias que o fornecedor atende")
+
+
+class CategoriaSimples(BaseModel):
+    """Schema simplificado de categoria para resposta"""
+    id: int
+    nome: str
+
+    class Config:
+        from_attributes = True
 
 
 class FornecedorResponse(FornecedorBase):
@@ -115,6 +125,7 @@ class FornecedorResponse(FornecedorBase):
     valor_total_comprado: Decimal
     created_at: datetime
     updated_at: datetime
+    categorias: Optional[List[CategoriaSimples]] = Field(None, description="Categorias que o fornecedor atende")
 
     class Config:
         from_attributes = True

@@ -27,6 +27,7 @@ class Categoria(Base, TenantMixin, TimestampMixin, AuditMixin):
     # Relacionamentos
     categoria_pai = relationship("Categoria", remote_side=[id], backref="subcategorias")
     produtos = relationship("Produto", back_populates="categoria")
+    fornecedores = relationship("Fornecedor", secondary="categoria_fornecedor", back_populates="categorias")
 
     def __repr__(self):
         return f"<Categoria {self.nome}>"
