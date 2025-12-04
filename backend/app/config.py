@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     # Jobs
     ENABLE_SCHEDULED_JOBS: bool = True  # Habilitado por padrao em producao
 
+    # Twilio (WhatsApp API)
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_WHATSAPP_FROM: str = ""  # Formato: whatsapp:+14155238886 (número Twilio)
+
     # Telegram: configurações movidas para tabela tenants (multi-tenant)
     # Cada tenant configura seu próprio bot/chat nas configurações da empresa
 

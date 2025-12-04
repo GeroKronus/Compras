@@ -170,10 +170,10 @@ def enviar_solicitacao(
     IMPORTANTE: Envia apenas os itens que cada fornecedor realmente fornece,
     baseado no cadastro de produto_fornecedor ou categoria_fornecedor.
 
-    Se enviar_whatsapp=True, também envia mensagem via WhatsApp Web.
+    Se enviar_whatsapp=True, também envia mensagem via WhatsApp (Twilio API).
     """
     from app.services.email_service import email_service
-    from app.services.whatsapp_service import whatsapp_service
+    from app.services.twilio_whatsapp_service import twilio_whatsapp_service as whatsapp_service
 
     solicitacao = get_by_id(db, SolicitacaoCotacao, solicitacao_id, tenant_id, error_message="Solicitacao nao encontrada")
     require_status(solicitacao, [StatusSolicitacao.RASCUNHO, StatusSolicitacao.ENVIADA], "enviar")

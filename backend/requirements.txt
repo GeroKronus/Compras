@@ -35,5 +35,5 @@ python-dateutil==2.8.2
 reportlab==4.2.5
 requests==2.31.0
 
-# WhatsApp Web automation (opcional - para envio via WhatsApp)
-pywhatkit==5.4
+# WhatsApp via Twilio API
+twilio==9.0.0
