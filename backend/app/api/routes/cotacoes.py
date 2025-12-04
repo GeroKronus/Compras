@@ -1,8 +1,10 @@
 """
 Rotas de Cotações - Refatorado com DRY abstractions
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+import io
 from sqlalchemy import desc
 from typing import Optional
 from datetime import datetime, date
@@ -319,7 +321,9 @@ def enviar_solicitacao(
                 fornecedor_nome=forn_nome,
                 solicitacao_numero=solicitacao.numero,
                 itens=itens_para_fornecedor,
-                data_limite=data_limite_str
+                data_limite=data_limite_str,
+                solicitacao_id=solicitacao.id,
+                fornecedor_id=forn_id
             )
             if resultado_whatsapp.get("sucesso"):
                 whatsapp_enviados.append(forn_nome)
@@ -1736,4 +1740,111 @@ def gerar_ocs_otimizadas(
         ocs_geradas=ocs_geradas,
         valor_total=valor_total_geral,
         economia_vs_menor_global=economia
+    )
+
+
+# ============ DOWNLOAD PDF PÚBLICO ============
+
+@router.get("/solicitacoes/{solicitacao_id}/pdf/{fornecedor_id}")
+def download_pdf_cotacao(
+    solicitacao_id: int,
+    fornecedor_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Download do PDF da solicitação de cotação.
+
+    Endpoint semi-público (não requer autenticação do usuário, mas usa IDs específicos).
+    Usado para link no WhatsApp.
+    """
+    from app.services.pdf_service import pdf_service
+
+    # Buscar solicitação (sem filtro de tenant para permitir acesso externo)
+    solicitacao = db.query(SolicitacaoCotacao).filter(
+        SolicitacaoCotacao.id == solicitacao_id
+    ).first()
+
+    if not solicitacao:
+        raise HTTPException(status_code=404, detail="Solicitação não encontrada")
+
+    # Buscar fornecedor
+    fornecedor = db.query(Fornecedor).filter(
+        Fornecedor.id == fornecedor_id
+    ).first()
+
+    if not fornecedor:
+        raise HTTPException(status_code=404, detail="Fornecedor não encontrado")
+
+    # Buscar itens da solicitação
+    itens_solicitacao = db.query(ItemSolicitacao).filter(
+        ItemSolicitacao.solicitacao_id == solicitacao_id
+    ).all()
+
+    # Filtrar itens que o fornecedor fornece (mesma lógica do envio)
+    produtos_fornecedor_result = db.execute(
+        produto_fornecedor.select().where(
+            produto_fornecedor.c.fornecedor_id == fornecedor_id
+        )
+    ).fetchall()
+    produtos_ids_fornecedor = {p.produto_id for p in produtos_fornecedor_result}
+
+    # Verificar se tem vínculo por produto ou por categoria
+    if produtos_ids_fornecedor:
+        # Filtro fino por produto
+        itens_filtrados = [item for item in itens_solicitacao if item.produto_id in produtos_ids_fornecedor]
+    else:
+        # Fallback: verificar por categoria
+        categorias_forn = db.execute(
+            categoria_fornecedor.select().where(
+                categoria_fornecedor.c.fornecedor_id == fornecedor_id
+            )
+        ).fetchall()
+        categorias_ids = {c.categoria_id for c in categorias_forn}
+
+        if categorias_ids:
+            itens_filtrados = []
+            for item in itens_solicitacao:
+                produto = db.query(Produto).filter(Produto.id == item.produto_id).first()
+                if produto and produto.categoria_id in categorias_ids:
+                    itens_filtrados.append(item)
+        else:
+            itens_filtrados = itens_solicitacao  # Sem filtro
+
+    # Montar lista de itens para o PDF
+    itens_pdf = []
+    for item in itens_filtrados:
+        produto = db.query(Produto).filter(Produto.id == item.produto_id).first()
+        itens_pdf.append({
+            "produto_nome": produto.nome if produto else "N/A",
+            "quantidade": float(item.quantidade),
+            "unidade_medida": item.unidade_medida,
+            "especificacoes": item.especificacoes
+        })
+
+    if not itens_pdf:
+        raise HTTPException(status_code=400, detail="Nenhum item disponível para este fornecedor")
+
+    # Gerar PDF
+    data_limite_str = None
+    if solicitacao.data_limite_proposta:
+        data_limite_str = solicitacao.data_limite_proposta.strftime('%d/%m/%Y')
+
+    pdf_bytes = pdf_service.gerar_pdf_cotacao(
+        fornecedor_nome=fornecedor.razao_social or fornecedor.nome_fantasia or "Fornecedor",
+        fornecedor_cnpj=fornecedor.cnpj,
+        solicitacao_numero=solicitacao.numero,
+        solicitacao_titulo=solicitacao.titulo or f"Cotação {solicitacao.numero}",
+        itens=itens_pdf,
+        observacoes=solicitacao.observacoes,
+        data_limite=data_limite_str,
+        solicitacao_id=solicitacao.id
+    )
+
+    # Retornar PDF como stream
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=Cotacao_{solicitacao.numero}_{fornecedor_id}.pdf"
+        }
     )

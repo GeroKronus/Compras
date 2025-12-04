@@ -198,7 +198,9 @@ class WhatsAppService:
         fornecedor_nome: str,
         solicitacao_numero: str,
         itens: list,
-        data_limite: Optional[str] = None
+        data_limite: Optional[str] = None,
+        solicitacao_id: Optional[int] = None,
+        fornecedor_id: Optional[int] = None
     ) -> dict:
         """
         Envia solicitação de cotação formatada via WhatsApp
@@ -209,10 +211,14 @@ class WhatsAppService:
             solicitacao_numero: Número da SC (ex: SC-2025-00007)
             itens: Lista de itens [{produto_nome, quantidade, unidade_medida}]
             data_limite: Data limite para resposta (opcional)
+            solicitacao_id: ID da solicitação (para gerar link do PDF)
+            fornecedor_id: ID do fornecedor (para gerar link do PDF)
 
         Returns:
             dict com status do envio
         """
+        from app.config import settings
+
         # Montar mensagem formatada
         mensagem = f"*Solicitação de Cotação {solicitacao_numero}*\n\n"
         mensagem += f"Prezado(a) {fornecedor_nome},\n\n"
@@ -226,11 +232,15 @@ class WhatsAppService:
 
         mensagem += "\n"
 
-        if data_limite:
-            mensagem += f"Prazo para resposta: {data_limite}\n\n"
+        # Adicionar link para download do PDF
+        if solicitacao_id and fornecedor_id:
+            pdf_url = f"{settings.API_BASE_URL}/api/v1/cotacoes/solicitacoes/{solicitacao_id}/pdf/{fornecedor_id}"
+            mensagem += f"📎 *Baixe o PDF completo:*\n{pdf_url}\n\n"
 
-        mensagem += "Por favor, envie sua proposta por e-mail ou responda esta mensagem.\n\n"
-        mensagem += "_Cotação detalhada enviada por e-mail._"
+        if data_limite:
+            mensagem += f"⏰ Prazo para resposta: {data_limite}\n\n"
+
+        mensagem += "Por favor, envie sua proposta respondendo este WhatsApp ou por e-mail."
 
         return self.enviar_mensagem(numero, mensagem)
 

@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "Sistema de Compras Multi-Tenant"
     ENVIRONMENT: str = "development"
+    API_BASE_URL: str = "http://localhost:8000"  # URL base para links externos (ex: download PDF)
 
     # CORS (string separada por vírgula ou lista)
     BACKEND_CORS_ORIGINS: Union[str, List[str]] = "http://localhost:5173,http://localhost:3000"
