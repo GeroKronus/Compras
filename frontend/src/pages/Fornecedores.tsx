@@ -48,14 +48,20 @@ export function Fornecedores() {
   const navigate = useNavigate();
 
   // Buscar categorias disponíveis
-  const { data: categoriasData } = useQuery({
-    queryKey: ['categorias'],
+  const { data: categoriasData, isLoading: loadingCategorias, error: errorCategorias } = useQuery({
+    queryKey: ['categorias-fornecedores'],
     queryFn: async () => {
+      console.log('[Fornecedores] Buscando categorias...');
       const response = await api.get('/categorias?page_size=100');
+      console.log('[Fornecedores] Categorias recebidas:', response.data);
       return response.data.items as Categoria[];
-    }
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutos
   });
   const categorias = categoriasData || [];
+
+  // Debug: log do estado das categorias
+  console.log('[Fornecedores] Estado categorias:', { categorias, loadingCategorias, errorCategorias });
 
   // Hook genérico CRUD - elimina 50 linhas de código duplicado
   const { items, isLoading, create, update, remove, invalidate } = useCrudResource<Fornecedor>({
@@ -262,8 +268,12 @@ export function Fornecedores() {
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Categorias que Atende</label>
                   <div className="border rounded-md p-3 max-h-48 overflow-y-auto">
-                    {categorias.length === 0 ? (
-                      <p className="text-sm text-gray-500">Nenhuma categoria cadastrada</p>
+                    {loadingCategorias ? (
+                      <p className="text-sm text-gray-500">Carregando categorias...</p>
+                    ) : errorCategorias ? (
+                      <p className="text-sm text-red-500">Erro ao carregar categorias</p>
+                    ) : categorias.length === 0 ? (
+                      <p className="text-sm text-gray-500">Nenhuma categoria cadastrada. <a href="/categorias" className="text-blue-600 underline">Cadastrar categorias</a></p>
                     ) : (
                       <div className="grid grid-cols-2 gap-2">
                         {categorias.map((cat) => (
