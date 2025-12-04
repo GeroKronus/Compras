@@ -51,18 +51,24 @@ export function Fornecedores() {
   const { data: categoriasData, isLoading: loadingCategorias, error: errorCategorias } = useQuery({
     queryKey: ['categorias-fornecedores'],
     queryFn: async () => {
-      console.log('[Fornecedores] Buscando categorias...');
-      const response = await api.get('/categorias?page_size=100');
-      console.log('[Fornecedores] Categorias recebidas - items:', response.data?.items?.length, 'total:', response.data?.total);
-      console.log('[Fornecedores] Primeira categoria:', response.data?.items?.[0]?.nome || 'NENHUMA');
-      return response.data.items as Categoria[];
+      try {
+        console.log('[Fornecedores] Buscando categorias...');
+        const response = await api.get('/categorias?page_size=100');
+        console.log('[Fornecedores] Categorias recebidas - items:', response.data?.items?.length, 'total:', response.data?.total);
+        return response.data.items as Categoria[];
+      } catch (err: any) {
+        console.error('[Fornecedores] ERRO ao buscar categorias:', err?.response?.status, err?.response?.data || err?.message);
+        throw err;
+      }
     },
-    staleTime: 1000 * 60 * 5, // 5 minutos
+    staleTime: 1000 * 60 * 5,
+    retry: 1,
   });
   const categorias = categoriasData || [];
 
-  // Debug: log do estado das categorias (apenas quando muda)
-  console.log('[Fornecedores] Total categorias carregadas:', categorias.length);
+  if (errorCategorias) {
+    console.error('[Fornecedores] Erro no estado:', errorCategorias);
+  }
 
   // Hook genérico CRUD - elimina 50 linhas de código duplicado
   const { items, isLoading, create, update, remove, invalidate } = useCrudResource<Fornecedor>({
